@@ -60,6 +60,7 @@ Nginx provides the public HTTPS interface and proxies requests to the local appl
 ## API
 
 For the canonical production contract, see [API.md](API.md).
+For the `v0.2.0` change summary, see [RELEASE_NOTES.md](RELEASE_NOTES.md).
 
 ### Health
 

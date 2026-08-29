@@ -33,6 +33,7 @@ systemd
 
 ```text
 https://example.com/api/health
+https://example.com/api/v1/info
 https://example.com/api/v1/catalan/10
 https://example.com/api/v1/snapshot
 ```
@@ -43,6 +44,7 @@ These are consumed through Nginx, which terminates TLS and forwards traffic to t
 
 ```text
 http://127.0.0.1:8088/health
+http://127.0.0.1:8088/v1/info
 http://127.0.0.1:8088/v1/catalan/10
 http://127.0.0.1:8088/v1/snapshot
 ```
@@ -278,6 +280,7 @@ This is intentional. The endpoint exposes host-level information and is therefor
 ### Basic Auth behavior
 
 - `GET /health` is unauthenticated
+- `GET /v1/info` is unauthenticated
 - `GET /v1/catalan/:n` is unauthenticated
 - `GET /v1/snapshot` requires HTTP Basic Auth
 
@@ -338,6 +341,12 @@ routes to:
 http://127.0.0.1:8088/v1/catalan/10
 ```
 
+The information route follows the same mapping:
+
+```text
+https://example.com/api/v1/info -> http://127.0.0.1:8088/v1/info
+```
+
 If you use a prefix rewrite or a path mapping in Nginx, the exact external path layout may vary slightly, but the underlying route semantics remain the same: public HTTPS at the edge, private local backend behind it.
 
 ## Security model
@@ -358,7 +367,7 @@ This is a small service with a minimal security boundary. The trust boundary is:
 Internet -> HTTPS + Nginx -> local lab-api process -> Linux host
 ```
 
-The system snapshot endpoint is the only route with protected access. The health and Catalan endpoints are intentionally public and informational.
+The system snapshot endpoint is the only route with protected access. The health, information, and Catalan endpoints are intentionally public and informational.
 
 ## systemd deployment
 
@@ -431,7 +440,7 @@ curl -sS -u 'username:password' http://127.0.0.1:8088/v1/snapshot
 
 - This API is intentionally small and stable.
 - No additional endpoints should be added without a matching documentation update.
-- The current contract is intentionally deliberate: a health check, a numeric calculation endpoint, and an authenticated snapshot endpoint.
+- The current contract is intentionally deliberate: a health check, public application metadata, a numeric calculation endpoint, and an authenticated snapshot endpoint.
 - If the service is extended later, the contract should be updated in this document first.
 
 This is the current canonical API contract for the service.
