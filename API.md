@@ -7,7 +7,7 @@ The service is intentionally small and intentionally narrow:
 - the Rust application listens only on `127.0.0.1:8088`
 - Nginx is the public entry point over HTTPS
 - the backend is not directly exposed to the Internet
-- the public API is limited to health, Catalan number calculation, and authenticated system snapshot data
+- the public API is limited to health, application metadata, Catalan number calculation, and authenticated system snapshot data
 
 ## Service architecture
 
@@ -54,6 +54,7 @@ The backend itself is only accessible from the local machine. It should not be e
 | Method | Endpoint | Auth | Purpose |
 | --- | --- | --- | --- |
 | GET | /health | No | Service health |
+| GET | /v1/info | No | Non-sensitive application metadata and endpoint discovery |
 | GET | /v1/catalan/:n | No | Catalan number, with `0 ≤ n ≤ 34` |
 | GET | /v1/snapshot | Basic Auth | Host/system snapshot |
 
@@ -72,9 +73,56 @@ The API uses the standard HTTP responses implied by the handler behavior:
 The most important contract checks are:
 
 - `GET /health` succeeds with `200`
+- `GET /v1/info` succeeds with `200` and returns non-sensitive metadata
 - `GET /v1/catalan/:n` succeeds with `200` when `0 ≤ n ≤ 34`
 - `GET /v1/catalan/:n` fails with `400` when `n > 34`
 - `GET /v1/snapshot` fails with `401` without valid Basic Auth
+
+## Application information endpoint
+
+### Route
+
+```http
+GET /v1/info
+```
+
+This public endpoint describes the running application and its public route surface.
+It does not require authentication and must not expose hostnames, filesystem paths,
+credentials, environment variables, or system snapshot data.
+
+### Request examples
+
+```bash
+curl -sS 'https://example.com/api/v1/info'
+curl -sS 'http://127.0.0.1:8088/v1/info'
+```
+
+### Response
+
+```json
+{
+   "service": "lab-api",
+   "api": "v1",
+   "version": "0.2.0",
+   "endpoints": [
+      "GET /health",
+      "GET /v1/info",
+      "GET /v1/catalan/:n",
+      "GET /v1/snapshot"
+   ],
+   "build_profile": "release",
+   "environment": "production"
+}
+```
+
+### Status
+
+- `200 OK` — Metadata returned
+- `500 Internal Server Error` — Unexpected backend failure
+
+`version` is taken from the package version at build time. `build_profile` identifies
+whether the binary was compiled with debug assertions. `environment` is a deployment
+label and must remain free of secrets.
 
 ## Health endpoint
 

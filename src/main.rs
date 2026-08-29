@@ -17,6 +17,16 @@ struct Health {
 }
 
 #[derive(Serialize)]
+struct Info {
+    service: &'static str,
+    api: &'static str,
+    version: &'static str,
+    endpoints: [&'static str; 4],
+    build_profile: &'static str,
+    environment: &'static str,
+}
+
+#[derive(Serialize)]
 struct Snapshot {
     hostname: String,
     uptime: String,
@@ -62,6 +72,26 @@ async fn health() -> Json<Health> {
     Json(Health {
         ok: true,
         service: "lab-api",
+    })
+}
+
+async fn info() -> Json<Info> {
+    Json(Info {
+        service: "lab-api",
+        api: "v1",
+        version: env!("CARGO_PKG_VERSION"),
+        endpoints: [
+            "GET /health",
+            "GET /v1/info",
+            "GET /v1/catalan/:n",
+            "GET /v1/snapshot",
+        ],
+        build_profile: if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
+        environment: option_env!("LAB_API_ENV").unwrap_or("unknown"),
     })
 }
 
@@ -133,6 +163,7 @@ async fn catalan_handler(Path(n): Path<u64>) -> impl IntoResponse {
 async fn main() {
     let app = Router::new()
         .route("/health", get(health))
+        .route("/v1/info", get(info))
         .route("/v1/snapshot", get(snapshot))
         .route("/v1/catalan/:n", get(catalan_handler));
 

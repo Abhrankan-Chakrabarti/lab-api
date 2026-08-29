@@ -2,7 +2,7 @@
 
 **A lightweight self-hosted Rust API for system snapshots and numerical computation.**
 
-`lab-api` is a small REST API written in Rust using [Axum](https://github.com/tokio-rs/axum). It provides health checks, authenticated system information, and numerical computation endpoints.
+`lab-api` is a small REST API written in Rust using [Axum](https://github.com/tokio-rs/axum). It provides health checks, public application metadata, authenticated system information, and numerical computation endpoints.
 
 The application is designed to run as a **localhost-only systemd service**, with Nginx handling public HTTPS access and reverse proxying.
 
@@ -14,6 +14,7 @@ The application is designed to run as a **localhost-only systemd service**, with
 - 🌐 HTTPS termination through Nginx
 - 🔑 HTTP Basic Authentication for sensitive system information
 - 📊 System snapshot endpoint
+- ℹ️ Application information endpoint
 - 🔢 Catalan number computation
 - ❤️ Simple health-check endpoint
 - ⚙️ systemd service support
@@ -78,6 +79,18 @@ Example:
 ```
 
 This endpoint is intended to remain publicly accessible for basic service monitoring.
+
+---
+
+### API Information
+
+```http
+GET /api/v1/info
+```
+
+Returns non-sensitive application metadata, including the API version, application version, available endpoints, build profile, and optional environment label. This endpoint is public and is intended for lightweight service discovery and frontend display.
+
+See [API.md](API.md) for the complete response contract and deployment details.
 
 ---
 
