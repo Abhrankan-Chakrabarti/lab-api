@@ -225,7 +225,11 @@ lab-api/
 ├── .gitignore
 ├── Cargo.toml
 ├── API.md
+├── DEPLOYMENT_GUIDE.md
 ├── RELEASE_NOTES.md
+├── deploy.sh
+├── health-check.sh
+├── lab-api.service.hardened
 └── src/
     └── main.rs
 ```
@@ -259,6 +263,77 @@ Contains:
 - JSON response structures
 - Local TCP listener
 - Axum server initialization
+
+### `API.md`
+
+Documents the canonical API contract, including:
+
+- Available endpoints
+- HTTP methods
+- Authentication requirements
+- Request and response formats
+- Error responses
+- Deployment-facing API behavior
+
+### `RELEASE_NOTES.md`
+
+Contains release-specific changes and notes for the project versions.
+
+### `DEPLOYMENT_GUIDE.md`
+
+Documents deployment and operational procedures for the self-hosted instance, including:
+
+- systemd hardening
+- service verification
+- health checks
+- manual deployment
+- troubleshooting
+- operational verification
+
+### `lab-api.service.hardened`
+
+Provides the hardened systemd unit used as the basis for the production `lab-api.service`.
+
+It applies restrictions such as:
+
+- `NoNewPrivileges=true`
+- `PrivateTmp=true`
+- `ProtectSystem=strict`
+- `ProtectHome=true`
+- `RestrictAddressFamilies=AF_INET AF_INET6`
+- `RestrictNamespaces=true`
+- `LockPersonality=true`
+- `ProtectKernelTunables=true`
+- `ProtectKernelModules=true`
+- `ProtectControlGroups=true`
+
+The file is a deployment configuration rather than application source code.
+
+### `deploy.sh`
+
+Provides a manual deployment workflow for the website and `lab-api`.
+
+It:
+
+1. Updates the website repository.
+2. Updates the `lab-api` source repository.
+3. Builds the release binary.
+4. Backs up the currently installed binary.
+5. Installs the new binary.
+6. Restarts `lab-api.service`.
+7. Verifies the service status.
+8. Performs a public API health check.
+
+The script is intentionally manual; it does not introduce automatic deployment or scheduled jobs.
+
+### `health-check.sh`
+
+Provides a small manual health-check utility for verifying that the deployed API is responding.
+
+It retries the health endpoint and exits with:
+
+- `0` when the service is healthy
+- `1` when the health check fails
 
 ---
 
