@@ -2,11 +2,10 @@
 
 # Manual deployment script for website + lab-api
 #
-# Usage:
-#   ./deploy.sh
+# Usage: ./deploy.sh
 #
-# Run as ec2-user, not with sudo.
-# The script uses sudo only for privileged installation and service management.
+# Run as ec2-user (without sudo).
+# The script uses sudo only for privileged operations.
 
 set -e
 
@@ -26,22 +25,16 @@ error() {
     exit 1
 }
 
-# The deployment workflow is intentionally run as ec2-user.
-# Git and Cargo must run with the normal user's environment and ownership.
-if [ "$(id -u)" -eq 0 ]; then
+# Deployment must be run as the normal user so Git and Cargo
+# use the correct ownership and environment.
+if [ "$EUID" -eq 0 ]; then
     error "Do not run deploy.sh with sudo. Run it as ec2-user: ./deploy.sh"
 fi
-
-# Required commands
-for command in git cargo curl sudo; do
-    if ! command -v "$command" >/dev/null 2>&1; then
-        error "Required command not found: $command"
-    fi
-done
 
 log "=== Deployment started ==="
 
 # 1. Update website
+
 log "Pulling website repository..."
 
 cd "$WEBSITE_DIR" || error "Website directory not found: $WEBSITE_DIR"
@@ -52,6 +45,7 @@ git pull origin main || error "Failed to pull website repo"
 log "Website updated."
 
 # 2. Update and build lab-api
+
 log "Pulling lab-api repository..."
 
 cd "$LAB_API_SRC" || error "Lab-api source directory not found: $LAB_API_SRC"
@@ -67,25 +61,38 @@ cargo build --release || error "Lab-api build failed"
 
 log "Lab-api build successful."
 
-# 3. Backup and install new binary
+# 3. Install new binary
+
 log "Installing new binary..."
 
-if [ -f "$LAB_API_BIN" ]; then
-    sudo cp "$LAB_API_BIN" \
-        "$LAB_API_BIN.backup-$(date +%s)" \
-        || error "Failed to back up previous binary"
+NEW_BINARY="$LAB_API_SRC/target/release/lab-api"
 
-    log "Backed up previous binary."
+if [ ! -f "$NEW_BINARY" ]; then
+    error "Built binary not found: $NEW_BINARY"
 fi
 
-sudo install -m 755 \
-    "$LAB_API_SRC/target/release/lab-api" \
-    "$LAB_API_BIN" \
-    || error "Failed to install binary"
+# Remove any previous backup binaries from earlier deployments.
+log "Removing previous binary backups..."
+
+sudo find "$(dirname "$LAB_API_BIN")" \
+    -maxdepth 1 \
+    -type f \
+    -name "$(basename "$LAB_API_BIN").backup-*" \
+    -delete
+
+# Install the new binary atomically.
+TEMP_BINARY="${LAB_API_BIN}.new"
+
+sudo install -m 755 "$NEW_BINARY" "$TEMP_BINARY" \
+    || error "Failed to install new binary"
+
+sudo mv "$TEMP_BINARY" "$LAB_API_BIN" \
+    || error "Failed to replace existing binary"
 
 log "Binary installed: $LAB_API_BIN"
 
 # 4. Restart service
+
 log "Restarting $SERVICE_NAME..."
 
 sudo systemctl restart "$SERVICE_NAME" \
@@ -94,6 +101,7 @@ sudo systemctl restart "$SERVICE_NAME" \
 sleep 2
 
 # 5. Check service status
+
 if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
     log "Service is running."
 else
@@ -101,15 +109,13 @@ else
 fi
 
 # 6. Health check
+
 log "Running health check..."
 
-if curl -fsS \
-    --connect-timeout 5 \
-    "https://abhrankan.duckdns.org/api/health" \
-    > /dev/null; then
+HEALTH_URL="https://abhrankan.duckdns.org/api/health"
 
+if curl -fsS --connect-timeout 5 "$HEALTH_URL" > /dev/null; then
     log "Health check passed."
-
 else
     log "WARNING: Health check failed (service may still be starting)"
 fi
