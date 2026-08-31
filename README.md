@@ -2,19 +2,19 @@
 
 **A lightweight self-hosted Rust API for system snapshots and numerical computation.**
 
-`lab-api` is a small REST API written in Rust using [Axum](https://github.com/tokio-rs/axum). It provides health checks, public application metadata, authenticated system information, and numerical computation endpoints.
+`lab-api` is a small REST API written in Rust using [Axum](https://github.com/tokio-rs/axum). It provides service health checks, public application metadata, authenticated system information, and numerical computation endpoints.
 
-The application is designed to run as a **localhost-only systemd service**, with Nginx handling public HTTPS access and reverse proxying.
+The application is designed to run as a **localhost-only systemd service**, with Nginx providing the public HTTPS interface and reverse proxy.
 
 ## Features
 
 - ⚡ Lightweight asynchronous Rust backend
 - 🦀 Built with Axum and Tokio
-- 🔒 Backend binds exclusively to `127.0.0.1`
+- 🔒 Binds exclusively to `127.0.0.1`
 - 🌐 HTTPS termination through Nginx
 - 🔑 HTTP Basic Authentication for sensitive system information
-- 📊 System snapshot endpoint
-- ℹ️ Application information endpoint
+- 📊 Linux system snapshot endpoint
+- ℹ️ Public application information endpoint
 - 🔢 Catalan number computation
 - ❤️ Simple health-check endpoint
 - ⚙️ systemd service support
@@ -28,23 +28,23 @@ The application is designed to run as a **localhost-only systemd service**, with
                             │
                             │ HTTPS
                             ▼
-                ┌─────────────────────────┐
-                │          Nginx          │
-                │                         │
-                │ TLS termination         │
-                │ Reverse proxy           │
-                │ Basic Authentication    │
-                └────────────┬────────────┘
+                  ┌─────────────────────┐
+                  │        Nginx        │
+                  │                     │
+                  │  TLS termination    │
+                  │  Reverse proxy      │
+                  │  Basic Auth         │
+                  └──────────┬──────────┘
                              │
                              │ HTTP
                              ▼
-                ┌─────────────────────────┐
-                │        lab-api          │
-                │                         │
-                │       Axum + Tokio      │
-                │                         │
-                │  127.0.0.1:8088        │
-                └─────────────────────────┘
+                  ┌─────────────────────┐
+                  │      lab-api        │
+                  │                     │
+                  │     Axum + Tokio    │
+                  │                     │
+                  │   127.0.0.1:8088    │
+                  └─────────────────────┘
 ```
 
 The Rust application is **not directly exposed to the Internet**.
@@ -55,12 +55,17 @@ It listens only on:
 127.0.0.1:8088
 ```
 
-Nginx provides the public HTTPS interface and proxies requests to the local application.
+Nginx provides the public HTTPS interface and forwards requests to the local application.
+
+For the canonical API contract, see [`API.md`](API.md).
+
+For the `v0.2.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
+
+---
 
 ## API
 
-For the canonical production contract, see [API.md](API.md).
-For the `v0.2.0` change summary, see [RELEASE_NOTES.md](RELEASE_NOTES.md).
+When deployed behind the example Nginx configuration, the public API is available under `/api/`.
 
 ### Health
 
@@ -81,19 +86,23 @@ Example:
 
 This endpoint is intended to remain publicly accessible for basic service monitoring.
 
----
-
 ### API Information
 
 ```http
 GET /api/v1/info
 ```
 
-Returns non-sensitive application metadata, including the API version, application version, available endpoints, build profile, and optional environment label. This endpoint is public and is intended for lightweight service discovery and frontend display.
+Returns non-sensitive application metadata, including:
 
-See [API.md](API.md) for the complete response contract and deployment details.
+- API version
+- Application version
+- Available endpoints
+- Build profile
+- Optional environment label
 
----
+This endpoint is public and can be used for lightweight service discovery and frontend display.
+
+See [`API.md`](API.md) for the complete response contract.
 
 ### System Snapshot
 
@@ -114,14 +123,14 @@ Example:
 }
 ```
 
-The endpoint collects:
+The snapshot contains:
 
 - Hostname
 - System uptime
 - 1, 5, and 15 minute load averages
 - Available memory in KiB
 
-### Authentication
+#### Authentication
 
 Because the snapshot exposes host-level information, the public Nginx endpoint is protected with **HTTP Basic Authentication**.
 
@@ -137,9 +146,7 @@ With valid credentials:
 curl -u 'username' https://example.com/api/v1/snapshot
 ```
 
-The credentials are handled by Nginx rather than by the Rust application.
-
----
+Authentication is handled by Nginx rather than by the Rust application.
 
 ### Catalan Numbers
 
@@ -149,7 +156,7 @@ GET /api/v1/catalan/:n
 
 Computes the `n`th Catalan number.
 
-The implementation uses:
+The implementation uses the recurrence:
 
 ```text
 C(0) = 1
@@ -157,9 +164,9 @@ C(0) = 1
 C(n) = C(n-1) × 2(2n-1) / (n+1)
 ```
 
-The result is calculated using Rust's `u128` integer type.
+Results are calculated using Rust's `u128` integer type.
 
-For this implementation, the maximum supported value is:
+The maximum supported value is:
 
 ```text
 n = 34
@@ -180,7 +187,7 @@ Response:
 }
 ```
 
-Another example:
+The largest supported input can also be requested:
 
 ```bash
 curl https://example.com/api/v1/catalan/34
@@ -201,7 +208,7 @@ Requests where `n > 34` return:
 400 Bad Request
 ```
 
-with a JSON error response:
+with:
 
 ```json
 {
@@ -209,12 +216,16 @@ with a JSON error response:
 }
 ```
 
+---
+
 ## Project Structure
 
 ```text
 lab-api/
 ├── .gitignore
 ├── Cargo.toml
+├── API.md
+├── RELEASE_NOTES.md
 └── src/
     └── main.rs
 ```
@@ -232,7 +243,7 @@ Ignores Rust build artifacts:
 Defines the Rust package and its dependencies:
 
 - `axum` — HTTP routing and server framework
-- `serde` — JSON serialization
+- `serde` — serialization and deserialization
 - `serde_json` — JSON support
 - `tokio` — asynchronous runtime
 
@@ -242,11 +253,14 @@ Contains:
 
 - API routes
 - Health endpoint
+- Application information endpoint
 - System snapshot collection
 - Catalan number calculation
 - JSON response structures
 - Local TCP listener
 - Axum server initialization
+
+---
 
 ## Requirements
 
@@ -258,18 +272,20 @@ Contains:
 - Nginx for public HTTPS deployment
 - systemd for service management
 
-The application itself does not require a database.
+The application does not require a database or external application service.
+
+---
 
 ## Build
 
-Clone the repository and enter the project directory:
+Clone the repository:
 
 ```bash
 git clone https://github.com/Abhrankan-Chakrabarti/lab-api.git
 cd lab-api
 ```
 
-Build the project:
+Build the release binary:
 
 ```bash
 cargo build --release
@@ -280,6 +296,8 @@ The resulting binary will be located at:
 ```text
 target/release/lab-api
 ```
+
+---
 
 ## Run Locally
 
@@ -295,7 +313,7 @@ The server listens on:
 127.0.0.1:8088
 ```
 
-Test it locally:
+Test the health endpoint:
 
 ```bash
 curl http://127.0.0.1:8088/health
@@ -316,9 +334,11 @@ Test the Catalan endpoint:
 curl http://127.0.0.1:8088/v1/catalan/10
 ```
 
+---
+
 ## Production Deployment
 
-A recommended deployment places Nginx in front of the Rust application.
+A typical deployment places Nginx in front of the Rust application:
 
 ```text
 Client
@@ -335,6 +355,8 @@ Nginx
 lab-api
 ```
 
+The application itself remains bound to localhost.
+
 ### Install the Binary
 
 After building:
@@ -345,7 +367,7 @@ sudo install -m 755 target/release/lab-api /usr/local/bin/lab-api
 
 ### systemd
 
-A systemd service can be used to keep the API running and start it automatically after reboot.
+A systemd service can keep the API running and start it automatically after reboot.
 
 Example:
 
@@ -401,6 +423,8 @@ systemctl is-enabled lab-api
 systemctl is-active lab-api
 ```
 
+---
+
 ## Nginx Configuration
 
 Nginx can expose the API through an HTTPS domain while keeping the Rust service bound to localhost.
@@ -451,7 +475,7 @@ server {
 }
 ```
 
-For the sensitive snapshot endpoint, Basic Authentication can be applied specifically to:
+For the sensitive snapshot endpoint, Basic Authentication can be applied specifically to that route:
 
 ```nginx
 location = /api/v1/snapshot {
@@ -461,6 +485,7 @@ location = /api/v1/snapshot {
     proxy_pass http://127.0.0.1:8088/v1/snapshot;
 
     proxy_http_version 1.1;
+
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -470,7 +495,7 @@ location = /api/v1/snapshot {
 
 The exact Nginx configuration depends on the surrounding website and deployment.
 
-After modifying Nginx:
+After modifying the configuration:
 
 ```bash
 sudo nginx -t
@@ -481,6 +506,8 @@ If the configuration test succeeds:
 ```bash
 sudo systemctl reload nginx
 ```
+
+---
 
 ## Security Model
 
@@ -498,14 +525,14 @@ The intended security boundary is:
 Internet
    │
    ▼
-HTTPS
+ HTTPS
    │
    ▼
-Nginx
+ Nginx
    │
    ├── Public endpoints
    │
-   └── Basic Auth
+   └── Basic Authentication
           │
           ▼
       lab-api
@@ -514,23 +541,34 @@ Nginx
    127.0.0.1:8088
 ```
 
+Nginx is responsible for:
+
+- TLS termination
+- Public routing
+- Authentication for protected endpoints
+- Forwarding requests to the local service
+
 The `/v1/snapshot` endpoint should remain protected when exposed through a public reverse proxy because it reveals information about the underlying host.
+
+---
 
 ## Error Handling
 
-The API returns JSON errors for invalid Catalan-number requests.
+Invalid Catalan-number requests return JSON errors.
 
-Example:
+For example:
 
 ```http
 GET /api/v1/catalan/35
 ```
 
-Response:
+returns:
 
 ```http
 HTTP/1.1 400 Bad Request
 ```
+
+with:
 
 ```json
 {
@@ -538,11 +576,13 @@ HTTP/1.1 400 Bad Request
 }
 ```
 
+---
+
 ## Design Notes
 
 ### Why `u128`?
 
-Catalan numbers grow very quickly.
+Catalan numbers grow rapidly.
 
 Using `u128` provides substantially more range than standard 64-bit integers while keeping the implementation simple and allocation-free for the supported range.
 
@@ -550,11 +590,11 @@ The current implementation deliberately limits the input to `34`.
 
 ### Why bind to `127.0.0.1`?
 
-The API is intended to sit behind Nginx.
+The API is designed to sit behind Nginx.
 
-Binding to localhost means the backend does not need to expose its application port directly to the network.
+Binding to localhost means the application port does not need to be directly exposed to the network.
 
-This also makes Nginx the central point for:
+This makes Nginx the central point for:
 
 - TLS
 - Authentication
@@ -571,9 +611,11 @@ systemd provides:
 - Centralized service management
 - Easy status inspection
 
+---
+
 ## Testing
 
-Run the Rust test/build checks:
+Run the Rust checks:
 
 ```bash
 cargo check
@@ -613,13 +655,18 @@ Then authenticate:
 curl -u 'username' https://example.com/api/v1/snapshot
 ```
 
+---
+
 ## Current API Surface
 
 | Endpoint | Method | Authentication | Purpose |
 |---|---|---|---|
 | `/api/health` | GET | None | Service health |
+| `/api/v1/info` | GET | None | Application metadata |
 | `/api/v1/catalan/:n` | GET | None | Catalan number calculation |
 | `/api/v1/snapshot` | GET | Basic Auth | Host/system snapshot |
+
+---
 
 ## Performance
 
@@ -632,21 +679,25 @@ The application uses:
 - Axum
 - Minimal runtime state
 - No database
-- No external services required by the application
+- No external application services
 
-This makes it suitable for lightweight deployments where a full application stack would be unnecessary.
+This makes it suitable for lightweight deployments where a larger application stack would be unnecessary.
+
+---
 
 ## Limitations
 
 The current implementation is intentionally simple.
 
-- The Catalan endpoint is limited to `n <= 34`.
+- Catalan computation is limited to `n <= 34`.
 - The snapshot endpoint is Linux-oriented.
 - System information is collected directly from Linux files such as `/proc/loadavg` and `/proc/meminfo`.
 - Uptime is obtained through the system `uptime` command.
 - Authentication is delegated to the reverse proxy.
 - No persistent application database is used.
 - No application-level authentication system is implemented.
+
+---
 
 ## Roadmap
 
@@ -656,19 +707,23 @@ Potential future improvements include:
 - [ ] More system metrics
 - [ ] Structured application logging
 - [ ] Automated tests
-- [ ] API documentation / OpenAPI
+- [ ] OpenAPI documentation
 - [ ] Graceful shutdown handling
 - [ ] More granular authentication and authorization
 - [ ] Container deployment
 - [ ] CI builds and release artifacts
 
-The project intentionally remains small until those capabilities are actually needed.
+The project intentionally remains small until these capabilities are actually needed.
+
+---
 
 ## License
 
 This project is licensed under the **MIT License**.
 
 See [`LICENSE`](LICENSE) for the full license text.
+
+---
 
 ## Author
 
