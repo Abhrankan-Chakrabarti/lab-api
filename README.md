@@ -15,7 +15,7 @@ The application is designed to run as a **localhost-only systemd service**, with
 - 🔑 HTTP Basic Authentication for sensitive system information
 - 📊 Linux system snapshot endpoint
 - ℹ️ Public application information endpoint
-- 🔢 Catalan number computation
+- 🔢 Catalan, Fibonacci, and GCD computation
 - ❤️ Simple health-check endpoint
 - ⚙️ systemd service support
 - 🐧 Linux-oriented system information
@@ -59,7 +59,7 @@ Nginx provides the public HTTPS interface and forwards requests to the local app
 
 For the canonical API contract, see [`API.md`](API.md).
 
-For the `v0.2.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
+For the `v0.3.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
 
 ---
 
@@ -83,6 +83,49 @@ Example:
   "service": "lab-api"
 }
 ```
+
+### Math routes
+
+The v0.3.0 math routes are public, read-only GET endpoints:
+
+```http
+GET /api/v1/math/catalan/:n
+GET /api/v1/math/fibonacci/:n
+GET /api/v1/math/gcd/:a/:b
+```
+
+The original route remains available as a compatibility alias:
+
+```http
+GET /api/v1/catalan/:n
+```
+
+Catalan values use `u128` arithmetic and support `0 ≤ n ≤ 34`. Fibonacci values use `u128` arithmetic and support `0 ≤ n ≤ 186`; `F(186)` is the largest value in range and `n = 187` returns `400 Bad Request`.
+
+Both Catalan and Fibonacci endpoints return:
+
+```json
+{
+  "n": 10,
+  "value": "55"
+}
+```
+
+GCD uses the Euclidean algorithm and accepts any `u64` path values, including zero:
+
+```bash
+curl https://example.com/api/v1/math/gcd/84/30
+```
+
+```json
+{
+  "a": 84,
+  "b": 30,
+  "gcd": 6
+}
+```
+
+The math routes do not require authentication; the snapshot route remains protected by Basic Auth at Nginx.
 
 This endpoint is intended to remain publicly accessible for basic service monitoring.
 
@@ -248,8 +291,12 @@ Defines the Rust package and its dependencies:
 
 - `axum` — HTTP routing and server framework
 - `serde` — serialization and deserialization
-- `serde_json` — JSON support
 - `tokio` — asynchronous runtime
+
+Test-only dependencies:
+
+- `serde_json` — HTTP test response decoding
+- `tower` — Axum router testing utilities
 
 ### `src/main.rs`
 
@@ -260,6 +307,10 @@ Contains:
 - Application information endpoint
 - System snapshot collection
 - Catalan number calculation
+- Fibonacci calculation
+- GCD calculation
+- Backward-compatible Catalan route
+- Unit and HTTP router tests
 - JSON response structures
 - Local TCP listener
 - Axum server initialization
@@ -694,6 +745,9 @@ Run the Rust checks:
 
 ```bash
 cargo check
+cargo fmt -- --check
+cargo test
+cargo build --release
 ```
 
 Build the release binary:
@@ -738,6 +792,9 @@ curl -u 'username' https://example.com/api/v1/snapshot
 |---|---|---|---|
 | `/api/health` | GET | None | Service health |
 | `/api/v1/info` | GET | None | Application metadata |
+| `/api/v1/math/catalan/:n` | GET | None | Catalan number calculation |
+| `/api/v1/math/fibonacci/:n` | GET | None | Fibonacci number calculation |
+| `/api/v1/math/gcd/:a/:b` | GET | None | Greatest common divisor |
 | `/api/v1/catalan/:n` | GET | None | Catalan number calculation |
 | `/api/v1/snapshot` | GET | Basic Auth | Host/system snapshot |
 
@@ -765,6 +822,8 @@ This makes it suitable for lightweight deployments where a larger application st
 The current implementation is intentionally simple.
 
 - Catalan computation is limited to `n <= 34`.
+- Fibonacci computation is limited to `n <= 186` by the `u128` boundary.
+- GCD accepts `u64` path values, including zero.
 - The snapshot endpoint is Linux-oriented.
 - System information is collected directly from Linux files such as `/proc/loadavg` and `/proc/meminfo`.
 - Uptime is obtained through the system `uptime` command.
@@ -781,7 +840,6 @@ Potential future improvements include:
 - [ ] Additional numerical algorithms
 - [ ] More system metrics
 - [ ] Structured application logging
-- [ ] Automated tests
 - [ ] OpenAPI documentation
 - [ ] Graceful shutdown handling
 - [ ] More granular authentication and authorization

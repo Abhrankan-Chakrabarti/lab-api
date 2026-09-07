@@ -7,7 +7,7 @@ The service is intentionally small and intentionally narrow:
 - the Rust application listens only on `127.0.0.1:8088`
 - Nginx is the public entry point over HTTPS
 - the backend is not directly exposed to the Internet
-- the public API is limited to health, application metadata, Catalan number calculation, and authenticated system snapshot data
+- the public API is limited to health, application metadata, read-only mathematical calculations, and authenticated system snapshot data
 
 ## Service architecture
 
@@ -35,6 +35,9 @@ systemd
 https://example.com/api/health
 https://example.com/api/v1/info
 https://example.com/api/v1/catalan/10
+https://example.com/api/v1/math/catalan/10
+https://example.com/api/v1/math/fibonacci/10
+https://example.com/api/v1/math/gcd/84/30
 https://example.com/api/v1/snapshot
 ```
 
@@ -46,6 +49,9 @@ These are consumed through Nginx, which terminates TLS and forwards traffic to t
 http://127.0.0.1:8088/health
 http://127.0.0.1:8088/v1/info
 http://127.0.0.1:8088/v1/catalan/10
+http://127.0.0.1:8088/v1/math/catalan/10
+http://127.0.0.1:8088/v1/math/fibonacci/10
+http://127.0.0.1:8088/v1/math/gcd/84/30
 http://127.0.0.1:8088/v1/snapshot
 ```
 
@@ -57,7 +63,10 @@ The backend itself is only accessible from the local machine. It should not be e
 | --- | --- | --- | --- |
 | GET | /health | No | Service health |
 | GET | /v1/info | No | Non-sensitive application metadata and endpoint discovery |
-| GET | /v1/catalan/:n | No | Catalan number, with `0 ≤ n ≤ 34` |
+| GET | /v1/math/catalan/:n | No | Catalan number, with `0 ≤ n ≤ 34` |
+| GET | /v1/math/fibonacci/:n | No | Fibonacci number, with `0 ≤ n ≤ 186` |
+| GET | /v1/math/gcd/:a/:b | No | Greatest common divisor of two `u64` values |
+| GET | /v1/catalan/:n | No | Catalan number, compatibility alias, with `0 ≤ n ≤ 34` |
 | GET | /v1/snapshot | Basic Auth | Host/system snapshot |
 
 ## HTTP status codes
@@ -76,9 +85,62 @@ The most important contract checks are:
 
 - `GET /health` succeeds with `200`
 - `GET /v1/info` succeeds with `200` and returns non-sensitive metadata
+- `GET /v1/math/catalan/:n` succeeds with `200` when `0 ≤ n ≤ 34`
+- `GET /v1/math/fibonacci/:n` succeeds with `200` when `0 ≤ n ≤ 186`
+- `GET /v1/math/gcd/:a/:b` succeeds with `200` for valid `u64` path values
+- `GET /v1/catalan/:n` remains available as a compatibility alias
 - `GET /v1/catalan/:n` succeeds with `200` when `0 ≤ n ≤ 34`
 - `GET /v1/catalan/:n` fails with `400` when `n > 34`
 - `GET /v1/snapshot` fails with `401` without valid Basic Auth
+
+## Math endpoints
+
+The math endpoints are public, read-only GET routes. They use `u128` arithmetic where applicable and return numeric values as strings to preserve the exact result in JSON clients.
+
+### Catalan
+
+```http
+GET /v1/math/catalan/:n
+```
+
+Supports `0 ≤ n ≤ 34`. The existing `GET /v1/catalan/:n` route is retained as a compatibility alias with the same response and limit.
+
+### Fibonacci
+
+```http
+GET /v1/math/fibonacci/:n
+```
+
+Supports `0 ≤ n ≤ 186`. `F(186)` is the largest Fibonacci value representable by the implementation's `u128` boundary; `n = 187` returns `400 Bad Request`.
+
+Example response:
+
+```json
+{
+   "n": 10,
+   "value": "55"
+}
+```
+
+### Greatest common divisor
+
+```http
+GET /v1/math/gcd/:a/:b
+```
+
+Computes the GCD of two `u64` path values using the Euclidean algorithm. Zero is valid, including `gcd(0, 0) = 0`.
+
+```bash
+curl -sS 'https://example.com/api/v1/math/gcd/84/30'
+```
+
+```json
+{
+   "a": 84,
+   "b": 30,
+   "gcd": 6
+}
+```
 
 ## Application information endpoint
 
@@ -105,10 +167,13 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
 {
    "service": "lab-api",
    "api": "v1",
-   "version": "0.2.0",
+   "version": "0.3.0",
    "endpoints": [
       "GET /health",
       "GET /v1/info",
+      "GET /v1/math/catalan/:n",
+      "GET /v1/math/fibonacci/:n",
+      "GET /v1/math/gcd/:a/:b",
       "GET /v1/catalan/:n",
       "GET /v1/snapshot"
    ],

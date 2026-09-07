@@ -1,10 +1,13 @@
 [package]
 name = "lab-api"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
 axum = "0.7"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+
+[dev-dependencies]
+serde_json = "1"
+tower = { version = "0.4", features = ["util"] }

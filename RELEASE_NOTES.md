@@ -1,3 +1,26 @@
+# lab-api v0.3.0
+
+Release date: 2026-09-08
+
+## Added
+
+- Added `GET /v1/math/catalan/:n`.
+- Added `GET /v1/math/fibonacci/:n` with `0 ≤ n ≤ 186`.
+- Added `GET /v1/math/gcd/:a/:b`.
+- Added unit and real Axum router tests for math values, boundaries, metadata, aliases, and unknown routes.
+
+## Compatibility
+
+- Preserved `GET /v1/catalan/:n` as a compatibility alias.
+- Kept `/v1/info` public and `/v1/snapshot` behind the existing Nginx Basic Auth boundary.
+- Kept the dependency footprint small and the existing localhost/systemd/Nginx deployment shape unchanged.
+
+## Freeze scope
+
+The service remains a small read-only API for health, metadata, mathematical calculations, and an authenticated system snapshot.
+
+---
+
 # lab-api v0.2.0
 
 Release date: 2026-08-30
