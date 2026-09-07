@@ -19,6 +19,8 @@ struct Info {
     api_version: &'static str,
     app_version: &'static str,
     endpoints: Vec<&'static str>,
+    build_profile: &'static str,
+    environment: &'static str,
 }
 
 #[derive(Serialize)]
@@ -72,6 +74,12 @@ async fn info() -> Json<Info> {
             "GET /v1/catalan/:n",
             "GET /v1/snapshot",
         ],
+        build_profile: if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
+        environment: option_env!("LAB_API_ENV").unwrap_or("unknown"),
     })
 }
 
@@ -258,6 +266,10 @@ mod tests {
             json_response(Request::get("/v1/info").body(Body::empty()).unwrap()).await;
 
         assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["api_version"], "v1");
+        assert_eq!(body["app_version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(body["build_profile"], "debug");
+        assert_eq!(body["environment"], "unknown");
         let endpoints = body["endpoints"].as_array().unwrap();
         assert!(endpoints.iter().any(|route| route == "GET /v1/catalan/:n"));
         assert!(endpoints

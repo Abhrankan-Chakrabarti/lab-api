@@ -166,8 +166,8 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
 ```json
 {
    "service": "lab-api",
-   "api": "v1",
-   "version": "0.3.0",
+   "api_version": "v1",
+   "app_version": "0.3.0",
    "endpoints": [
       "GET /health",
       "GET /v1/info",
@@ -187,9 +187,9 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
 - `200 OK` — Metadata returned
 - `500 Internal Server Error` — Unexpected backend failure
 
-`version` is taken from the package version at build time. `build_profile` identifies
-whether the binary was compiled with debug assertions. `environment` is a deployment
-label and must remain free of secrets.
+`app_version` is taken from the package version at build time. `build_profile` identifies
+whether the binary was compiled with debug assertions. `environment` is an optional
+`LAB_API_ENV` deployment label, defaults to `unknown`, and must remain free of secrets.
 
 ## Health endpoint
 
