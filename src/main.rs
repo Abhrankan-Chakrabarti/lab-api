@@ -269,7 +269,10 @@ mod tests {
         assert_eq!(body["api_version"], "v1");
         assert_eq!(body["app_version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(body["build_profile"], "debug");
-        assert_eq!(body["environment"], "unknown");
+        assert_eq!(
+            body["environment"],
+            option_env!("LAB_API_ENV").unwrap_or("unknown")
+        );
         let endpoints = body["endpoints"].as_array().unwrap();
         assert!(endpoints.iter().any(|route| route == "GET /v1/catalan/:n"));
         assert!(endpoints
