@@ -1,3 +1,78 @@
+# lab-api v0.4.0
+
+Release date: 2026-09-08
+
+## Added
+
+- Added a read-only School Database API backed by SQLite.
+- Added dynamic school table discovery with `GET /school/api/tables`.
+- Added dynamic schema discovery with `GET /school/api/tables/{table}/schema`.
+- Added paginated table access with `GET /school/api/tables/{table}`.
+- Added student-table search with bounded, literal substring matching.
+- Added a School Database health endpoint at `GET /school/api/health`.
+- Added a web-based School Database portal at `/school/`.
+- Added comprehensive database-layer tests covering validation, pagination, search, schema discovery, table discovery, ordering, and sensitive-column filtering.
+
+## Security
+
+- School database access is read-only.
+- The SQLite database is opened using read-only SQLite flags.
+- Student responses expose only an explicitly allowed set of safe columns.
+- Dynamic table and column identifiers are validated and safely quoted.
+- Search values use parameterized SQL queries.
+- SQL `LIKE` wildcards are escaped so user search input is treated literally.
+- Pagination limits and search lengths are bounded.
+- The School portal is designed to run behind Nginx HTTPS and HTTP Basic Authentication.
+- The database is stored outside the application repository and is not directly exposed by Nginx.
+
+## Configuration
+
+- The School database path is configured through the `SCHOOL_DB_PATH` environment variable.
+- The production database is located at `/var/lib/lab-api/School.db`.
+- The Rust service remains bound to `127.0.0.1:8088`.
+- Nginx continues to provide the public HTTPS and authentication boundary.
+
+## Compatibility
+
+- Existing health, mathematical, metadata, and authenticated snapshot endpoints remain unchanged.
+- Preserved `GET /v1/catalan/:n` as a compatibility alias.
+- The existing localhost/systemd/Nginx deployment shape remains unchanged.
+- No additional application runtime, database server, container, or external service is required.
+
+## Validation
+
+- `cargo fmt` passes.
+- Debug test suite: 22/22 tests passed.
+- Release test suite: 22/22 tests passed.
+- Debug build passes.
+- Release build passes.
+
+## Freeze scope
+
+The project now provides two focused capabilities:
+
+```text
+Core API
+/health
+/v1/info
+/v1/catalan/:n
+/v1/math/catalan/:n
+/v1/math/fibonacci/:n
+/v1/math/gcd/:a/:b
+/v1/snapshot
+
+School Database
+/school/
+/school/api/health
+/school/api/tables
+/school/api/tables/{table}
+/school/api/tables/{table}/schema
+```
+
+The School Database remains intentionally read-only in this release. Editing, authentication beyond the existing Nginx boundary, and more advanced student-management operations are deferred to a future release.
+
+---
+
 # lab-api v0.3.0
 
 Release date: 2026-09-08
