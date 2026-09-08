@@ -5,16 +5,27 @@ After=network.target
 [Service]
 Type=simple
 User=ec2-user
+
 ExecStart=/usr/local/bin/lab-api
 
 Restart=on-failure
 RestartSec=3s
+
+# Application environment
+Environment="SCHOOL_DB_PATH=/var/lib/lab-api/School.db"
+
+# Working directory for relative application assets
+WorkingDirectory=/opt/lab-api
 
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
+
+# Allow the application to read the School database,
+# but prevent it from writing to the database directory.
+ReadOnlyPaths=/var/lib/lab-api
 
 # Network
 RestrictAddressFamilies=AF_INET AF_INET6
