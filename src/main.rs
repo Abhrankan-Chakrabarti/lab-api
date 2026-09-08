@@ -3,6 +3,13 @@ use serde::Serialize;
 use std::fs;
 use std::net::SocketAddr;
 use std::process::Command;
+use std::sync::Arc;
+use tower_http::services::ServeDir;
+
+mod school;
+
+use school::api::{router as school_router, SchoolState};
+use school::db::SchoolDb;
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const API_VERSION: &str = "v1";
@@ -73,6 +80,11 @@ async fn info() -> Json<Info> {
             "GET /v1/math/gcd/:a/:b",
             "GET /v1/catalan/:n",
             "GET /v1/snapshot",
+            "GET /school/",
+            "GET /school/api/health",
+            "GET /school/api/tables",
+            "GET /school/api/tables/:table",
+            "GET /school/api/tables/:table/schema",
         ],
         build_profile: if cfg!(debug_assertions) {
             "debug"
@@ -120,15 +132,19 @@ async fn snapshot() -> impl IntoResponse {
     })
 }
 
-/// C(0)=1; C(n)=C(n-1)*2*(2n-1)/(n+1). u128 safe for n <= 34.
+/// C(0)=1; C(n)=C(n-1)*2*(2n-1)/(n+1).
+/// u128 safe for n <= 34.
 fn catalan(n: u64) -> Option<u128> {
     if n > 34 {
         return None;
     }
+
     let mut c: u128 = 1;
+
     for i in 1..=n {
         c = c * 2 * (2 * i as u128 - 1) / (i as u128 + 1);
     }
+
     Some(c)
 }
 
@@ -139,6 +155,7 @@ async fn catalan_handler(Path(n): Path<u64>) -> impl IntoResponse {
             value: value.to_string(),
         })
         .into_response(),
+
         None => err(
             StatusCode::BAD_REQUEST,
             "n must be <= 34 for this demo (u128 limit)",
@@ -147,21 +164,26 @@ async fn catalan_handler(Path(n): Path<u64>) -> impl IntoResponse {
     }
 }
 
-/// F(0)=0, F(1)=1. u128 safe for n <= 186.
+/// F(0)=0, F(1)=1.
+/// u128 safe for n <= 186.
 fn fibonacci(n: u64) -> Option<u128> {
     if n > 186 {
         return None;
     }
+
     if n == 0 {
         return Some(0);
     }
+
     let mut a: u128 = 0;
     let mut b: u128 = 1;
+
     for _ in 2..=n {
         let next = a + b;
         a = b;
         b = next;
     }
+
     Some(if n == 1 { 1 } else { b })
 }
 
@@ -172,6 +194,7 @@ async fn fibonacci_handler(Path(n): Path<u64>) -> impl IntoResponse {
             value: value.to_string(),
         })
         .into_response(),
+
         None => err(
             StatusCode::BAD_REQUEST,
             "n must be <= 186 for this demo (u128 limit)",
@@ -186,6 +209,7 @@ fn gcd(mut a: u64, mut b: u64) -> u64 {
         b = a % b;
         a = t;
     }
+
     a
 }
 
@@ -197,39 +221,102 @@ async fn gcd_handler(Path((a, b)): Path<(u64, u64)>) -> Json<GcdResult> {
     })
 }
 
-fn app() -> Router {
+/// Build the existing public API router.
+fn api_router() -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/v1/info", get(info))
         .route("/v1/snapshot", get(snapshot))
-        // Prefer nested math resources (REST-ish)
+        // REST-style math resources.
         .route("/v1/math/catalan/:n", get(catalan_handler))
         .route("/v1/math/fibonacci/:n", get(fibonacci_handler))
         .route("/v1/math/gcd/:a/:b", get(gcd_handler))
-        // Backward-compatible alias
+        // Backward-compatible alias.
         .route("/v1/catalan/:n", get(catalan_handler))
+}
+
+/// Build the School database portal.
+///
+/// The database is opened read-only. If SCHOOL_DB_PATH is not configured
+/// or the database cannot be opened, the School API is disabled while
+/// the existing lab-api continues to operate normally.
+fn school_routes() -> Router {
+    let database_path = match std::env::var("SCHOOL_DB_PATH") {
+        Ok(path) if !path.trim().is_empty() => path,
+
+        Ok(_) => {
+            eprintln!("SCHOOL_DB_PATH is empty; school routes disabled");
+            return Router::new();
+        }
+
+        Err(_) => {
+            eprintln!("SCHOOL_DB_PATH not set; school routes disabled");
+            return Router::new();
+        }
+    };
+
+    match SchoolDb::open(&database_path) {
+        Ok(db) => {
+            eprintln!("school database: {database_path}");
+
+            school_router(SchoolState { db: Arc::new(db) })
+        }
+
+        Err(error) => {
+            eprintln!("school database disabled: {error}");
+            Router::new()
+        }
+    }
+}
+
+/// Build the complete application.
+///
+/// Route precedence:
+///
+///     /school/api/*   -> School API
+///     /school/*       -> School static files
+///     /api/*          -> existing API routes
+///
+/// The School database itself is never served as a static file.
+fn app() -> Router {
+    let school_api = school_routes();
+
+    let school_static = Router::new().nest_service(
+        "/school",
+        ServeDir::new("static/school").append_index_html_on_directories(true),
+    );
+
+    api_router().merge(school_api).merge(school_static)
 }
 
 #[tokio::main]
 async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], 8088));
+
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .expect("bind 127.0.0.1:8088");
+
     eprintln!("lab-api {APP_VERSION} listening on {addr}");
+
     axum::serve(listener, app()).await.expect("serve");
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::to_bytes, body::Body, http::Request};
+    use axum::{
+        body::{to_bytes, Body},
+        http::Request,
+    };
     use serde_json::Value;
     use tower::ServiceExt;
 
     async fn json_response(request: Request<Body>) -> (StatusCode, Value) {
         let response = app().oneshot(request).await.unwrap();
+
         let status = response.status();
+
         let body = to_bytes(response.into_body(), 16 * 1024).await.unwrap();
 
         (status, serde_json::from_slice(&body).unwrap())
@@ -246,10 +333,12 @@ mod tests {
     fn fibonacci_respects_u128_boundary() {
         assert_eq!(fibonacci(0), Some(0));
         assert_eq!(fibonacci(1), Some(1));
+
         assert_eq!(
             fibonacci(186),
             Some(332825110087067562321196029789634457848)
         );
+
         assert_eq!(fibonacci(187), None);
     }
 
@@ -268,6 +357,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["api_version"], "v1");
         assert_eq!(body["app_version"], env!("CARGO_PKG_VERSION"));
+
         assert_eq!(
             body["build_profile"],
             if cfg!(debug_assertions) {
@@ -276,18 +366,25 @@ mod tests {
                 "release"
             }
         );
+
         assert_eq!(
             body["environment"],
             option_env!("LAB_API_ENV").unwrap_or("unknown")
         );
+
         let endpoints = body["endpoints"].as_array().unwrap();
+
         assert!(endpoints.iter().any(|route| route == "GET /v1/catalan/:n"));
+
         assert!(endpoints
             .iter()
             .any(|route| route == "GET /v1/math/fibonacci/:n"));
+
         assert!(endpoints
             .iter()
             .any(|route| route == "GET /v1/math/gcd/:a/:b"));
+
+        assert!(endpoints.iter().any(|route| route == "GET /school/"));
     }
 
     #[tokio::test]
@@ -298,11 +395,13 @@ mod tests {
                 .unwrap(),
         )
         .await;
+
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["value"], "16796");
 
         let (status, body) =
             json_response(Request::get("/v1/catalan/10").body(Body::empty()).unwrap()).await;
+
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["value"], "16796");
 
@@ -312,6 +411,7 @@ mod tests {
                 .unwrap(),
         )
         .await;
+
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["value"], "55");
 
@@ -321,6 +421,7 @@ mod tests {
                 .unwrap(),
         )
         .await;
+
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["gcd"], 6);
     }
@@ -333,6 +434,7 @@ mod tests {
                 .unwrap(),
         )
         .await;
+
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(body["error"].as_str().unwrap().contains("34"));
 
@@ -342,6 +444,7 @@ mod tests {
                 .unwrap(),
         )
         .await;
+
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert!(body["error"].as_str().unwrap().contains("186"));
     }
@@ -351,6 +454,22 @@ mod tests {
         let response = app()
             .oneshot(
                 Request::get("/v1/math/unknown")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn school_api_is_disabled_without_database_configuration() {
+        std::env::remove_var("SCHOOL_DB_PATH");
+
+        let response = app()
+            .oneshot(
+                Request::get("/school/api/tables")
                     .body(Body::empty())
                     .unwrap(),
             )
