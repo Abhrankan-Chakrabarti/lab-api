@@ -61,12 +61,20 @@ pub struct TablePage {
     pub limit: usize,
     pub offset: usize,
     pub returned: usize,
+    pub total: usize,
+}
+
+#[derive(Debug, Serialize)]
+pub struct StudentDetail {
+    pub table: String,
+    pub student: Map<String, Value>,
 }
 
 #[derive(Debug)]
 pub enum DbError {
     InvalidTable,
     TableNotFound,
+    StudentNotFound,
     Database(String),
 }
 
@@ -75,6 +83,7 @@ impl std::fmt::Display for DbError {
         match self {
             Self::InvalidTable => write!(f, "invalid table name"),
             Self::TableNotFound => write!(f, "table not found"),
+            Self::StudentNotFound => write!(f, "student not found"),
             Self::Database(message) => write!(f, "database error: {message}"),
         }
     }
@@ -263,6 +272,7 @@ impl SchoolDb {
                 limit,
                 offset,
                 returned: 0,
+                total: 0,
             });
         }
 
@@ -279,17 +289,7 @@ impl SchoolDb {
             .filter(|value| !value.is_empty())
             .map(|value| truncate_utf8(value, MAX_SEARCH_LENGTH));
 
-        let (sql, params): (String, Vec<Box<dyn ToSql>>) = if let Some(query) = trimmed_search {
-            /*
-             * Escape SQLite LIKE wildcard characters so user input is
-             * treated as literal text rather than a wildcard expression.
-             *
-             * ESCAPE '\' makes:
-             *
-             *     % -> \%
-             *     _ -> \_
-             *     \ -> \\
-             */
+        let (where_clause, search_pattern) = if let Some(query) = trimmed_search {
             let escaped_query = escape_like_pattern(query);
             let pattern = format!("%{escaped_query}%");
 
@@ -298,30 +298,52 @@ impl SchoolDb {
                 .map(|column| format!("CAST({column} AS TEXT) LIKE ?1 ESCAPE '\\'"))
                 .collect();
 
-            let where_clause = likes.join(" OR ");
+            (Some(likes.join(" OR ")), Some(pattern))
+        } else {
+            (None, None)
+        };
 
-            /*
-             * Student Code is the primary key in the imported school
-             * tables, so use it as the stable ordering key when present.
-             *
-             * If it isn't present, fall back to the first selected
-             * column. The identifier is already quoted.
-             */
-            let order_column = if columns.iter().any(|column| column == "Student Code") {
-                quote_ident("Student Code")
-            } else {
-                quoted_columns[0].clone()
-            };
+        // Count all rows matching the current search, independently of
+        // LIMIT/OFFSET.
+        let count_sql = match &where_clause {
+            Some(where_clause) => {
+                format!("SELECT COUNT(*) FROM {quoted_table} WHERE {where_clause}")
+            }
+            None => format!("SELECT COUNT(*) FROM {quoted_table}"),
+        };
+
+        let total_i64: i64 = match search_pattern.as_deref() {
+            Some(pattern) => conn
+                .query_row(&count_sql, [pattern], |row| row.get(0))
+                .map_err(|err| DbError::Database(err.to_string()))?,
+            None => conn
+                .query_row(&count_sql, [], |row| row.get(0))
+                .map_err(|err| DbError::Database(err.to_string()))?,
+        };
+
+        let total = usize::try_from(total_i64)
+            .map_err(|_| DbError::Database("row count exceeds usize range".to_owned()))?;
+
+        let order_column = if columns.iter().any(|column| column == "Student Code") {
+            quote_ident("Student Code")
+        } else {
+            quoted_columns[0].clone()
+        };
+
+        let (sql, params): (String, Vec<Box<dyn ToSql>>) = if let Some(pattern) = search_pattern {
+            let where_clause = where_clause
+                .as_ref()
+                .expect("search pattern must have a WHERE clause");
 
             let sql = format!(
                 r#"
-                        SELECT {select_list}
-                        FROM {quoted_table}
-                        WHERE {where_clause}
-                        ORDER BY {order_column}
-                        LIMIT ?2
-                        OFFSET ?3
-                    "#
+                    SELECT {select_list}
+                    FROM {quoted_table}
+                    WHERE {where_clause}
+                    ORDER BY {order_column}
+                    LIMIT ?2
+                    OFFSET ?3
+                "#
             );
 
             (
@@ -333,20 +355,14 @@ impl SchoolDb {
                 ],
             )
         } else {
-            let order_column = if columns.iter().any(|column| column == "Student Code") {
-                quote_ident("Student Code")
-            } else {
-                quoted_columns[0].clone()
-            };
-
             let sql = format!(
                 r#"
-                        SELECT {select_list}
-                        FROM {quoted_table}
-                        ORDER BY {order_column}
-                        LIMIT ?1
-                        OFFSET ?2
-                    "#
+                    SELECT {select_list}
+                    FROM {quoted_table}
+                    ORDER BY {order_column}
+                    LIMIT ?1
+                    OFFSET ?2
+                "#
             );
 
             (sql, vec![Box::new(limit as i64), Box::new(offset as i64)])
@@ -354,19 +370,18 @@ impl SchoolDb {
 
         let mut stmt = conn
             .prepare(&sql)
-            .map_err(|error| DbError::Database(error.to_string()))?;
+            .map_err(|err| DbError::Database(err.to_string()))?;
 
-        let param_refs: Vec<&dyn ToSql> =
-            params.iter().map(|param| &**param as &dyn ToSql).collect();
+        let param_refs: Vec<&dyn ToSql> = params.iter().map(|param| param.as_ref()).collect();
 
         let rows_iter = stmt
             .query_map(param_refs.as_slice(), |row| row_to_json(row, &columns))
-            .map_err(|error| DbError::Database(error.to_string()))?;
+            .map_err(|err| DbError::Database(err.to_string()))?;
 
         let mut rows = Vec::with_capacity(limit);
 
         for result in rows_iter {
-            rows.push(result.map_err(|error| DbError::Database(error.to_string()))?);
+            rows.push(result.map_err(|err| DbError::Database(err.to_string()))?);
         }
 
         let returned = rows.len();
@@ -378,7 +393,74 @@ impl SchoolDb {
             limit,
             offset,
             returned,
+            total,
         })
+    }
+
+    /// Fetch one student using the safe Student Code identifier.
+    ///
+    /// Only SAFE_COLUMNS are returned. No sensitive database columns can
+    /// be exposed through this lookup.
+    pub fn student_detail(&self, table: &str, student_code: i64) -> Result<StudentDetail, DbError> {
+        self.assert_table(table)?;
+
+        let columns = self.safe_columns(table)?;
+
+        if columns.is_empty() {
+            return Err(DbError::Database(
+                "table has no safe student columns".to_owned(),
+            ));
+        }
+
+        let student_code_column = "Student Code";
+
+        if !columns.iter().any(|column| column == student_code_column) {
+            return Err(DbError::Database(
+                "table has no Student Code column".to_owned(),
+            ));
+        }
+
+        let conn = self.conn()?;
+
+        let quoted_columns: Vec<String> =
+            columns.iter().map(|column| quote_ident(column)).collect();
+
+        let select_list = quoted_columns.join(", ");
+        let quoted_table = quote_ident(table);
+        let quoted_student_code = quote_ident(student_code_column);
+
+        let sql = format!(
+            r#"
+                SELECT {select_list}
+                FROM {quoted_table}
+                WHERE {quoted_student_code} = ?1
+                LIMIT 1
+            "#
+        );
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|error| DbError::Database(error.to_string()))?;
+
+        let mut rows = stmt
+            .query([student_code])
+            .map_err(|error| DbError::Database(error.to_string()))?;
+
+        match rows
+            .next()
+            .map_err(|error| DbError::Database(error.to_string()))?
+        {
+            Some(row) => {
+                let student = row_to_json(row, &columns)
+                    .map_err(|error| DbError::Database(error.to_string()))?;
+
+                Ok(StudentDetail {
+                    table: table.to_owned(),
+                    student,
+                })
+            }
+            None => Err(DbError::StudentNotFound),
+        }
     }
 }
 
@@ -845,6 +927,114 @@ mod tests {
                 .any(|table| table.starts_with("sqlite_")),
             "internal SQLite tables must not be exposed"
         );
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn total_reports_all_rows_independently_of_pagination() {
+        let path = std::env::temp_dir().join("lab-api-test-total-pagination.db");
+        let db = create_test_db(&path);
+
+        let first_page = db.page("II_A", 2, 0, None).expect("first page should load");
+
+        assert_eq!(first_page.returned, 2);
+        assert_eq!(first_page.total, 4);
+
+        let second_page = db
+            .page("II_A", 2, 2, None)
+            .expect("second page should load");
+
+        assert_eq!(second_page.returned, 2);
+        assert_eq!(second_page.total, 4);
+
+        let empty_page = db
+            .page("II_A", 2, 100, None)
+            .expect("out-of-range page should load");
+
+        assert_eq!(empty_page.returned, 0);
+        assert_eq!(empty_page.total, 4);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn total_reports_matching_rows_for_search() {
+        let path = std::env::temp_dir().join("lab-api-test-total-search.db");
+        let db = create_test_db(&path);
+
+        let page = db
+            .page("II_A", 1, 0, Some("Alice"))
+            .expect("search page should load");
+
+        assert_eq!(page.returned, 1);
+        assert_eq!(page.total, 1);
+
+        let page = db
+            .page("II_A", 1, 0, Some("2018"))
+            .expect("date search page should load");
+
+        assert_eq!(page.returned, 1);
+        assert_eq!(page.total, 4);
+
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn student_detail_returns_only_safe_columns() {
+        let path = test_db_path();
+        let db = create_test_db(&path);
+
+        let detail = db
+            .student_detail("II_A", 1001)
+            .expect("student detail query failed");
+
+        assert_eq!(detail.table, "II_A");
+
+        assert_eq!(detail.student.get("Student Code"), Some(&Value::from(1001)));
+        assert_eq!(detail.student.get("Roll No"), Some(&Value::from(1)));
+        assert_eq!(
+            detail.student.get("Student Name"),
+            Some(&Value::from("Alice"))
+        );
+        assert_eq!(
+            detail.student.get("Student DOB"),
+            Some(&Value::from("2018-01-15"))
+        );
+        assert_eq!(
+            detail.student.get("Academic Year"),
+            Some(&Value::from("2026-27"))
+        );
+
+        let sensitive = [
+            "Father Name",
+            "Mother Name",
+            "Guardian Number",
+            "Student Contact Number",
+            "Guardian Contact Number",
+            "Bank IFS Code",
+            "Bank A/C number",
+            "Aadhaar Y/N",
+        ];
+
+        for column in sensitive {
+            assert!(
+                !detail.student.contains_key(column),
+                "sensitive column {column:?} leaked into student detail"
+            );
+        }
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn missing_student_returns_student_not_found() {
+        let path = test_db_path();
+        let db = create_test_db(&path);
+
+        let result = db.student_detail("II_A", 9999);
+
+        assert!(matches!(result, Err(DbError::StudentNotFound)));
 
         cleanup(&path);
     }

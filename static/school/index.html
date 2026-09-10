@@ -1,38 +1,219 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>School Database</title>
-  <style>
-    :root { --bg:#0d1117; --card:#161b22; --text:#c9d1d9; --dim:#8b949e; --bd:#30363d; --link:#58a6ff; }
-    body { font-family: system-ui,sans-serif; background:var(--bg); color:var(--text); margin:0; padding:1.25rem; max-width:1100px; margin-inline:auto; }
-    h1 { font-size:1.35rem; margin:0 0 .25rem; }
-    .sub { color:var(--dim); margin-bottom:1.25rem; }
-    .classes { display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem; }
-    .classes button { background:var(--card); border:1px solid var(--bd); color:var(--text); padding:.4rem .7rem; border-radius:6px; cursor:pointer; }
-    .classes button.active { border-color:var(--link); color:#fff; }
-    input[type=search] { width:100%; max-width:320px; padding:.5rem .7rem; border-radius:6px; border:1px solid var(--bd); background:#0d1117; color:var(--text); margin-bottom:1rem; }
-    table { width:100%; border-collapse:collapse; font-size:.9rem; }
-    th, td { border-bottom:1px solid var(--bd); padding:.45rem .4rem; text-align:left; vertical-align:top; }
-    th { color:var(--dim); font-weight:600; }
-    .pager { display:flex; gap:.5rem; margin-top:1rem; align-items:center; }
-    .err { color:#f85149; }
-    .lock { color:var(--dim); font-size:.85rem; }
-  </style>
-</head>
-<body>
-  <h1>School Database</h1>
-  <p class="sub">Read-only student portal <span class="lock">🔒 auth required</span></p>
-  <div id="classes" class="classes"></div>
-  <input type="search" id="q" placeholder="Search students..." disabled>
-  <div id="meta" class="sub"></div>
-  <div id="out"></div>
-  <div class="pager">
-    <button type="button" id="prev" disabled>Prev</button>
-    <button type="button" id="next" disabled>Next</button>
-  </div>
-  <script src="/school/school.js"></script>
-</body>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex, nofollow" />
+        <title>School Database</title>
+        <style>
+            :root {
+                --bg: #0d1117;
+                --card: #161b22;
+                --text: #c9d1d9;
+                --dim: #8b949e;
+                --bd: #30363d;
+                --link: #58a6ff;
+            }
+
+            body {
+                font-family: system-ui, sans-serif;
+                background: var(--bg);
+                color: var(--text);
+                margin: 0;
+                padding: 1.25rem;
+                max-width: 1100px;
+                margin-inline: auto;
+            }
+
+            h1 {
+                font-size: 1.35rem;
+                margin: 0 0 0.25rem;
+            }
+
+            .sub {
+                color: var(--dim);
+                margin-bottom: 1.25rem;
+            }
+
+            .classes {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+            }
+
+            .classes button {
+                background: var(--card);
+                border: 1px solid var(--bd);
+                color: var(--text);
+                padding: 0.4rem 0.7rem;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+
+            .classes button:hover {
+                border-color: var(--link);
+            }
+
+            .classes button.active {
+                border-color: var(--link);
+                color: #fff;
+            }
+
+            input[type="search"] {
+                width: 100%;
+                max-width: 320px;
+                padding: 0.5rem 0.7rem;
+                border-radius: 6px;
+                border: 1px solid var(--bd);
+                background: #0d1117;
+                color: var(--text);
+                margin-bottom: 1rem;
+                box-sizing: border-box;
+            }
+
+            input[type="search"]:focus {
+                outline: none;
+                border-color: var(--link);
+            }
+
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 0.9rem;
+            }
+
+            th,
+            td {
+                border-bottom: 1px solid var(--bd);
+                padding: 0.45rem 0.4rem;
+                text-align: left;
+                vertical-align: top;
+            }
+
+            th {
+                color: var(--dim);
+                font-weight: 600;
+            }
+
+            .student-row {
+                cursor: pointer;
+            }
+
+            .student-row:hover {
+                background: var(--card);
+            }
+
+            .pager {
+                display: flex;
+                gap: 0.5rem;
+                margin-top: 1rem;
+                align-items: center;
+            }
+
+            .pager button,
+            #back-to-table {
+                background: var(--card);
+                border: 1px solid var(--bd);
+                color: var(--text);
+                padding: 0.4rem 0.7rem;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+
+            .pager button:hover:not(:disabled),
+            #back-to-table:hover {
+                border-color: var(--link);
+            }
+
+            .pager button:disabled {
+                opacity: 0.45;
+                cursor: default;
+            }
+
+            .student-detail {
+                max-width: 700px;
+            }
+
+            .student-detail-header {
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                margin-bottom: 1rem;
+            }
+
+            .student-detail-header h2 {
+                font-size: 1.15rem;
+                margin: 0;
+            }
+
+            .student-detail dl {
+                display: grid;
+                grid-template-columns: minmax(140px, 220px) 1fr;
+                margin: 0;
+                border-top: 1px solid var(--bd);
+            }
+
+            .student-detail dt,
+            .student-detail dd {
+                margin: 0;
+                padding: 0.65rem 0.5rem;
+                border-bottom: 1px solid var(--bd);
+            }
+
+            .student-detail dt {
+                color: var(--dim);
+                font-weight: 600;
+            }
+
+            .student-detail dd {
+                overflow-wrap: anywhere;
+            }
+
+            .err {
+                color: #f85149;
+            }
+
+            .lock {
+                color: var(--dim);
+                font-size: 0.85rem;
+            }
+
+            @media (max-width: 600px) {
+                body {
+                    padding: 1rem;
+                }
+
+                .student-detail dl {
+                    grid-template-columns: 1fr;
+                }
+
+                .student-detail dt {
+                    border-bottom: 0;
+                    padding-bottom: 0.2rem;
+                }
+
+                .student-detail dd {
+                    padding-top: 0.2rem;
+                }
+
+                table {
+                    font-size: 0.82rem;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <h1>School Database</h1>
+        <p class="sub">Read-only student portal <span class="lock">🔒 auth required</span></p>
+        <div id="classes" class="classes"></div>
+        <input type="search" id="q" placeholder="Search students..." disabled />
+        <div id="meta" class="sub"></div>
+        <div id="out"></div>
+        <div class="pager">
+            <button type="button" id="prev" disabled>Prev</button>
+            <button type="button" id="next" disabled>Next</button>
+        </div>
+        <script src="/school/school.js"></script>
+    </body>
 </html>
