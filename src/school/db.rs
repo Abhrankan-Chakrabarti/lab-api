@@ -34,6 +34,11 @@ pub struct SchoolDb {
     path: Arc<PathBuf>,
 }
 
+#[derive(Debug)]
+pub struct DatabaseValidation {
+    pub tables: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct TableList {
     pub tables: Vec<String>,
@@ -111,6 +116,100 @@ impl SchoolDb {
         Ok(Self {
             path: Arc::new(path),
         })
+    }
+
+    /// Validate a candidate SQLite database before it is activated.
+    ///
+    /// This performs stronger checks than `open()`:
+    /// - the file must exist;
+    /// - SQLite must be able to open and query it read-only;
+    /// - SQLite integrity_check must return `ok`;
+    /// - at least one application table must exist;
+    /// - at least one table must contain both `Student Code` and
+    ///   `Student Name`.
+    ///
+    /// No database is modified by this operation.
+    pub fn validate(path: impl AsRef<Path>) -> Result<DatabaseValidation, DbError> {
+        let path = path.as_ref();
+
+        if !path.is_file() {
+            return Err(DbError::Database(format!(
+                "database file does not exist: {}",
+                path.display()
+            )));
+        }
+
+        let conn = Self::connect(path)?;
+
+        // A simple read verifies that SQLite can actually query the database.
+        conn.query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+            .map_err(|error| DbError::Database(error.to_string()))?;
+
+        // Full SQLite integrity validation is deliberately performed here,
+        // rather than on every normal SchoolDb connection.
+        let integrity: String = conn
+            .query_row("PRAGMA integrity_check", [], |row| row.get(0))
+            .map_err(|error| DbError::Database(error.to_string()))?;
+
+        if !integrity.eq_ignore_ascii_case("ok") {
+            return Err(DbError::Database(format!(
+                "database integrity check failed: {integrity}"
+            )));
+        }
+
+        let tables = {
+            let mut stmt = conn
+                .prepare(
+                    r#"
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name NOT LIKE 'sqlite\_%'
+            ORDER BY name COLLATE NOCASE, name
+            "#,
+                )
+                .map_err(|error| DbError::Database(error.to_string()))?;
+
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|error| DbError::Database(error.to_string()))?;
+
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|error| DbError::Database(error.to_string()))?
+        };
+
+        if tables.is_empty() {
+            return Err(DbError::Database(
+                "database contains no application tables".to_owned(),
+            ));
+        }
+
+        let has_student_table = tables.iter().any(|table| {
+            let pragma_table = quote_ident(table);
+            let sql = format!("PRAGMA table_info({pragma_table})");
+
+            let Ok(mut stmt) = conn.prepare(&sql) else {
+                return false;
+            };
+
+            let Ok(columns) = stmt.query_map([], |row| row.get::<_, String>(1)) else {
+                return false;
+            };
+
+            let names = columns.collect::<Result<Vec<_>, _>>().unwrap_or_default();
+
+            names.iter().any(|name| name == "Student Code")
+                && names.iter().any(|name| name == "Student Name")
+        });
+
+        if !has_student_table {
+            return Err(DbError::Database(
+                "database contains no table with both Student Code and Student Name columns"
+                    .to_owned(),
+            ));
+        }
+
+        Ok(DatabaseValidation { tables })
     }
 
     /// Create a new read-only SQLite connection.
@@ -1035,6 +1134,121 @@ mod tests {
         let result = db.student_detail("II_A", 9999);
 
         assert!(matches!(result, Err(DbError::StudentNotFound)));
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn valid_database_passes_validation() {
+        let path = test_db_path();
+        let _db = create_test_db(&path);
+
+        let validation = SchoolDb::validate(&path).expect("validation should succeed");
+
+        assert_eq!(validation.tables, vec!["II_A"]);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn missing_database_fails_validation() {
+        let path = test_db_path();
+
+        let result = SchoolDb::validate(&path);
+
+        assert!(matches!(result, Err(DbError::Database(message))
+            if message.contains("database file does not exist")));
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn malformed_database_fails_validation() {
+        let path = test_db_path();
+
+        fs::write(&path, b"this is not a sqlite database")
+            .expect("failed to create malformed database");
+
+        let result = SchoolDb::validate(&path);
+
+        assert!(matches!(result, Err(DbError::Database(_))));
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn empty_database_fails_validation() {
+        let path = test_db_path();
+
+        let conn = Connection::open(&path).expect("failed to create database");
+        drop(conn);
+
+        let result = SchoolDb::validate(&path);
+
+        assert!(matches!(
+            result,
+            Err(DbError::Database(message))
+                if message.contains("no application tables")
+        ));
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn database_without_required_student_columns_fails_validation() {
+        let path = test_db_path();
+
+        let conn = Connection::open(&path).expect("failed to create database");
+
+        conn.execute_batch(
+            r#"
+            CREATE TABLE II_A (
+                "Student Code" INTEGER PRIMARY KEY,
+                "Father Name" TEXT
+            );
+            "#,
+        )
+        .expect("failed to create test table");
+
+        drop(conn);
+
+        let result = SchoolDb::validate(&path);
+
+        assert!(matches!(
+            result,
+            Err(DbError::Database(message))
+                if message.contains("Student Code and Student Name")
+        ));
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn database_with_required_student_columns_passes_validation() {
+        let path = test_db_path();
+
+        let conn = Connection::open(&path).expect("failed to create database");
+
+        conn.execute_batch(
+            r#"
+            CREATE TABLE II_A (
+                "Student Code" INTEGER PRIMARY KEY,
+                "Student Name" TEXT
+            );
+
+            CREATE TABLE metadata (
+                "Key" TEXT,
+                "Value" TEXT
+            );
+            "#,
+        )
+        .expect("failed to create test tables");
+
+        drop(conn);
+
+        let validation = SchoolDb::validate(&path).expect("validation should succeed");
+
+        assert_eq!(validation.tables, vec!["II_A", "metadata"]);
 
         cleanup(&path);
     }

@@ -10,6 +10,7 @@ mod school;
 
 use school::api::{router as school_router, SchoolState};
 use school::db::SchoolDb;
+use school::import::import_database;
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 const API_VERSION: &str = "v1";
@@ -85,6 +86,7 @@ async fn info() -> Json<Info> {
             "GET /school/api/tables",
             "GET /school/api/tables/:table",
             "GET /school/api/tables/:table/schema",
+            "GET /school/api/tables/:table/students/:student_code",
         ],
         build_profile: if cfg!(debug_assertions) {
             "debug"
@@ -289,8 +291,67 @@ fn app() -> Router {
     api_router().merge(school_api).merge(school_static)
 }
 
+/// Run the one-shot School database importer.
+///
+/// The destination comes from SCHOOL_DB_PATH, exactly like normal server
+/// mode. The running HTTP API is not started in this mode.
+fn run_import(candidate: &str) -> Result<(), String> {
+    let destination =
+        std::env::var("SCHOOL_DB_PATH").map_err(|_| "SCHOOL_DB_PATH is not set".to_owned())?;
+
+    if destination.trim().is_empty() {
+        return Err("SCHOOL_DB_PATH is empty".to_owned());
+    }
+
+    eprintln!("lab-api {APP_VERSION} database import");
+    eprintln!("candidate: {candidate}");
+    eprintln!("destination: {destination}");
+
+    let result = import_database(candidate, &destination).map_err(|error| error.to_string())?;
+
+    eprintln!("database import successful");
+    eprintln!("activated: {}", result.destination.display());
+    eprintln!("tables: {}", result.tables.join(", "));
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
+    let mut args = std::env::args();
+    let _program = args.next();
+
+    match args.next().as_deref() {
+        Some("import") => {
+            let Some(candidate) = args.next() else {
+                eprintln!("usage: lab-api import <candidate.db>");
+                std::process::exit(2);
+            };
+
+            if args.next().is_some() {
+                eprintln!("usage: lab-api import <candidate.db>");
+                std::process::exit(2);
+            }
+
+            if let Err(error) = run_import(&candidate) {
+                eprintln!("database import failed: {error}");
+                std::process::exit(1);
+            }
+
+            return;
+        }
+
+        Some(command) => {
+            eprintln!("unknown command: {command}");
+            eprintln!("usage:");
+            eprintln!("  lab-api");
+            eprintln!("  lab-api import <candidate.db>");
+            std::process::exit(2);
+        }
+
+        None => {}
+    }
+
     let addr = SocketAddr::from(([127, 0, 0, 1], 8088));
 
     let listener = tokio::net::TcpListener::bind(addr)
