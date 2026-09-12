@@ -1,3 +1,144 @@
+# lab-api v0.5.1
+
+Release date: 2026-09-12
+
+## Added
+
+- Added a read-only School Database API backed by SQLite.
+- Added dynamic school table discovery with `GET /school/api/tables`.
+- Added dynamic schema discovery with `GET /school/api/tables/{table}/schema`.
+- Added paginated table access with `GET /school/api/tables/{table}`.
+- Added student-table search with bounded, literal substring matching.
+- Added clickable student detail access with `GET /school/api/tables/{table}/students/{student_code}`.
+- Added a School Database health endpoint at `GET /school/api/health`.
+- Added a web-based School Database portal at `/school/`.
+- Added a validated School database importer through `lab-api import <candidate.db>`.
+- Added SQLite integrity and schema validation before database activation.
+- Added importer tests covering successful activation, malformed candidates, missing candidates, invalid schemas, and preservation of the existing database after failed imports.
+
+## Security
+
+- School database access is read-only during normal API operation.
+- The SQLite database is opened using read-only SQLite flags.
+- Student responses expose only an explicitly allowed set of safe columns.
+- Dynamic table and column identifiers are validated and safely quoted.
+- Search values use parameterized SQL queries.
+- SQL `LIKE` wildcards are escaped so user search input is treated literally.
+- Pagination limits and search lengths are bounded.
+- Candidate databases are copied to a staging file and validated before activation.
+- Invalid or incomplete candidates are rejected without replacing the active database.
+- Unix activation uses atomic rename-based replacement.
+- Windows activation uses rollback-safe replacement.
+- The School portal is designed to run behind Nginx HTTPS and HTTP Basic Authentication.
+- The database is stored outside the application repository and is not directly exposed by Nginx.
+
+## Configuration
+
+- The School database path is configured through the `SCHOOL_DB_PATH` environment variable.
+- The production database is located at `/var/lib/lab-api/School.db`.
+- The Rust service remains bound to `127.0.0.1:8088`.
+- Nginx continues to provide the public HTTPS and authentication boundary.
+- The importer uses the same `SCHOOL_DB_PATH` destination as normal server mode.
+- Import mode is one-shot and does not start the HTTP server.
+
+## Compatibility
+
+- Existing health, mathematical, metadata, and authenticated snapshot endpoints remain unchanged.
+- Preserved `GET /v1/catalan/:n` as a compatibility alias.
+- The existing localhost/systemd/Nginx deployment shape remains unchanged.
+- No additional application runtime, database server, container, or external service is required.
+- The normal service process continues to operate with read-only database access.
+
+## Validation
+
+- `cargo fmt` passes.
+- Debug test suite: **39/39 tests passed**.
+- Clippy passes with `-D warnings`.
+- The validated database importer was tested successfully with a real School database.
+- Production deployment and end-to-end operation were verified.
+- Failed-import behavior was tested to ensure the active database remains protected.
+
+## Freeze scope
+
+The project now provides two focused capabilities:
+
+```text
+Core API
+/health
+/v1/info
+/v1/catalan/:n
+/v1/math/catalan/:n
+/v1/math/fibonacci/:n
+/v1/math/gcd/:a/:b
+/v1/snapshot
+
+School Database
+/school/
+/school/api/health
+/school/api/tables
+/school/api/tables/{table}
+/school/api/tables/{table}/schema
+/school/api/tables/{table}/students/{student_code}
+
+School Database Importer
+lab-api import <candidate.db>
+```
+
+The School Database remains intentionally read-only during runtime. Database replacement is supported only through the separate, validated one-shot importer. Editing student records, HTTP-based database uploads, and more advanced student-management operations remain deferred to a future release.
+
+---
+
+# lab-api v0.5.0
+
+Release date: 2026-09-08
+
+## Added
+
+- Added real pagination totals to `GET /school/api/tables/{table}` through the `total` response field.
+- Added debounced search to the School Database portal.
+- Added clickable student rows in the School Database portal.
+- Added student detail access through `GET /school/api/tables/{table}/students/{student_code}`.
+- Added safe student-detail responses restricted to explicitly allowed display columns.
+- Added deterministic student-table ordering for consistent pagination.
+- Added comprehensive tests for pagination totals, search behavior, student details, safe-column filtering, and API responses.
+
+## Security
+
+- Student detail responses expose only explicitly allowed safe columns.
+- Student lookup is restricted to the selected table and `Student Code`.
+- Existing read-only database access and SQL-safety protections remain unchanged.
+- Search input remains bounded and is treated as literal text.
+- Existing Nginx HTTPS and HTTP Basic Authentication boundaries remain unchanged.
+
+## Compatibility
+
+- Existing health, mathematical, metadata, snapshot, and School Database endpoints remain available.
+- Existing table and schema discovery behavior remains unchanged.
+- The existing localhost/systemd/Nginx deployment shape remains unchanged.
+- No additional application runtime, database server, container, or external service is required.
+
+## Validation
+
+- Added unit tests for student-detail lookup and safe response filtering.
+- Added API tests for successful student-detail responses and missing students.
+- Verified pagination totals independently of the current page and search results.
+- Verified deterministic ordering and non-overlapping pagination pages.
+
+## Freeze scope
+
+The School Database portal now supports:
+
+```text
+/school/
+/school/api/health
+/school/api/tables
+/school/api/tables/{table}
+/school/api/tables/{table}/schema
+/school/api/tables/{table}/students/{student_code}
+```
+
+The School Database remains intentionally read-only. Database importing, validation, and replacement are introduced in v0.5.1 through the separate one-shot importer.
+
 # lab-api v0.4.0
 
 Release date: 2026-09-08
