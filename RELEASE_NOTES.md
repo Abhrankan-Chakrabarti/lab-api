@@ -1,9 +1,86 @@
+# lab-api v0.6.0
+
+Release date: 2026-09-13
+
+## Added
+
+- Added schema-driven student identification for student-detail lookups.
+- Added dynamic discovery of a table's single-column primary key.
+- Added support for student tables using `Roll No` as the primary key instead of requiring `Student Code`.
+- Added schema-driven student-detail column selection.
+- Added privacy-aware student-detail responses that include ordinary student information while excluding highly sensitive fields.
+- Added support for returning ordinary detail fields such as `Father Name` and `Mother Name` from the student-detail endpoint.
+- Updated the School Database portal to use the discovered primary key instead of assuming `Student Code`.
+- Added database tests covering primary-key discovery, missing primary keys, alternate primary keys, and student-detail lookup using `Roll No`.
+- Added API coverage for the updated student-detail privacy boundary.
+
+## Security
+
+- Student identifiers are discovered from SQLite primary-key metadata rather than being hard-coded.
+- Student-detail queries safely quote dynamically discovered identifiers and use parameterized values.
+- Composite and missing primary keys are rejected for student-detail lookup.
+- Unsafe student identifier columns are rejected.
+- Student-detail responses exclude highly sensitive fields, including:
+  - `Guardian Number`
+  - `Student Contact Number`
+  - `Guardian Contact Number`
+  - `Bank IFS Code`
+  - `Bank A/C number`
+  - `Aadhaar Y/N`
+- The normal School Database list/page API retains its more restrictive safe-column policy.
+- Existing read-only SQLite access, bounded search, SQL identifier validation, and parameterized queries remain unchanged.
+- Existing Nginx HTTPS and HTTP Basic Authentication boundaries remain unchanged.
+
+## Compatibility
+
+- Existing School Database table and schema discovery endpoints remain available.
+- Existing pagination and search behavior remains unchanged.
+- Existing student-detail URL structure remains unchanged:
+  `GET /school/api/tables/{table}/students/{student_id}`
+- Student-detail lookup is no longer tied specifically to a `Student Code` column.
+- Existing health, mathematical, metadata, snapshot, and importer functionality remains unchanged.
+- The existing localhost/systemd/Nginx deployment shape remains unchanged.
+- No additional application runtime, database server, container, or external service is required.
+
+## Validation
+
+- `cargo fmt` passes.
+- Debug test suite: **44/44 tests passed**.
+- Database-focused test suite: **29/29 tests passed**.
+- Verified primary-key discovery for both `Student Code` and `Roll No`.
+- Verified rejection of missing and composite primary keys.
+- Verified student-detail responses exclude highly sensitive fields.
+- Verified ordinary student information, including `Father Name` and `Mother Name`, is available through the detail endpoint.
+- Verified the School Database API tests pass with the updated privacy behavior.
+
+## Freeze scope
+
+The School Database now provides schema-driven student details:
+
+```text
+/school/
+/school/api/health
+/school/api/tables
+/school/api/tables/{table}
+/school/api/tables/{table}/schema
+/school/api/tables/{table}/students/{student_id}
+```
+
+The student-detail endpoint discovers the table's primary key from SQLite schema metadata instead of assuming a `Student Code` column.
+
+The School Database remains intentionally read-only during runtime. Database replacement continues to be supported only through the separate, validated one-shot importer introduced in v0.5.1.
+
+---
+
 # lab-api v0.5.1
 
 Release date: 2026-09-12
 
 ## Added
 
+- Added a validated School Database importer through `lab-api import <candidate.db>`.
+- Added SQLite integrity and schema validation before database activation.
+- Added importer tests covering successful activation, malformed candidates, missing candidates, invalid schemas, and preservation of the existing database after failed imports.
 - Added a read-only School Database API backed by SQLite.
 - Added dynamic school table discovery with `GET /school/api/tables`.
 - Added dynamic schema discovery with `GET /school/api/tables/{table}/schema`.
@@ -12,9 +89,6 @@ Release date: 2026-09-12
 - Added clickable student detail access with `GET /school/api/tables/{table}/students/{student_code}`.
 - Added a School Database health endpoint at `GET /school/api/health`.
 - Added a web-based School Database portal at `/school/`.
-- Added a validated School database importer through `lab-api import <candidate.db>`.
-- Added SQLite integrity and schema validation before database activation.
-- Added importer tests covering successful activation, malformed candidates, missing candidates, invalid schemas, and preservation of the existing database after failed imports.
 
 ## Security
 
@@ -60,7 +134,7 @@ Release date: 2026-09-12
 
 ## Freeze scope
 
-The project now provides two focused capabilities:
+The project provides two focused capabilities:
 
 ```text
 Core API
@@ -84,7 +158,7 @@ School Database Importer
 lab-api import <candidate.db>
 ```
 
-The School Database remains intentionally read-only during runtime. Database replacement is supported only through the separate, validated one-shot importer. Editing student records, HTTP-based database uploads, and more advanced student-management operations remain deferred to a future release.
+The School Database remains intentionally read-only during runtime. Database replacement is supported only through the separate, validated one-shot importer.
 
 ---
 
@@ -139,6 +213,8 @@ The School Database portal now supports:
 
 The School Database remains intentionally read-only. Database importing, validation, and replacement are introduced in v0.5.1 through the separate one-shot importer.
 
+---
+
 # lab-api v0.4.0
 
 Release date: 2026-09-08
@@ -190,7 +266,7 @@ Release date: 2026-09-08
 
 ## Freeze scope
 
-The project now provides two focused capabilities:
+The project provides two focused capabilities:
 
 ```text
 Core API
