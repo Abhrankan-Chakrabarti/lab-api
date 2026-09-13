@@ -303,8 +303,9 @@ mod tests {
         assert_eq!(body["student"]["Student DOB"], "2018-01-15");
         assert_eq!(body["student"]["Academic Year"], "2026-27");
 
-        assert!(body["student"].get("Father Name").is_none());
-        assert!(body["student"].get("Mother Name").is_none());
+        assert!(body["student"].get("Father Name").is_some());
+        assert!(body["student"].get("Mother Name").is_some());
+
         assert!(body["student"].get("Guardian Number").is_none());
         assert!(body["student"].get("Student Contact Number").is_none());
         assert!(body["student"].get("Guardian Contact Number").is_none());

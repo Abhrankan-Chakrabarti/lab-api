@@ -1,177 +1,192 @@
 const state = {
-  table: null,
-  offset: 0,
-  limit: 25,
-  searchTimer: null,
-  requestId: 0,
+    table: null,
+    primaryKey: null,
+    offset: 0,
+    limit: 25,
+    searchTimer: null,
+    requestId: 0,
 };
 
 async function api(path) {
-  const r = await fetch(path, { credentials: "same-origin" });
+    const r = await fetch(path, {
+        credentials: "same-origin"
+    });
 
-  if (!r.ok) {
-    throw new Error(`${r.status} ${await r.text()}`);
-  }
+    if (!r.ok) {
+        throw new Error(`${r.status} ${await r.text()}`);
+    }
 
-  return r.json();
+    return r.json();
 }
 
 function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) =>
-    ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    })[c]
-  );
+    return String(s ?? "").replace(/[&<>"']/g, (c) =>
+        ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+        })[c]
+    );
 }
 
 async function loadTables() {
-  const data = await api("/school/api/tables");
-  const el = document.getElementById("classes");
+    const data = await api("/school/api/tables");
+    const el = document.getElementById("classes");
 
-  el.innerHTML = "";
+    el.innerHTML = "";
 
-  data.tables.forEach((t) => {
-    const b = document.createElement("button");
+    data.tables.forEach((t) => {
+        const b = document.createElement("button");
 
-    b.textContent = t.replaceAll("_", "-");
-    b.onclick = () => selectTable(t, b);
+        b.textContent = t.replaceAll("_", "-");
+        b.onclick = () => selectTable(t, b);
 
-    el.appendChild(b);
-  });
+        el.appendChild(b);
+    });
 }
 
 async function selectTable(table, btn) {
-  state.table = table;
-  state.offset = 0;
+    state.table = table;
+    state.primaryKey = null;
+    state.offset = 0;
 
-  document
-    .querySelectorAll(".classes button")
-    .forEach((b) => b.classList.remove("active"));
+    document
+        .querySelectorAll(".classes button")
+        .forEach((b) => b.classList.remove("active"));
 
-  btn.classList.add("active");
+    btn.classList.add("active");
 
-  document.getElementById("q").disabled = false;
+    document.getElementById("q").disabled = false;
 
-  await loadPage();
+    const schema = await api(
+        `/school/api/tables/${encodeURIComponent(table)}/schema`
+    );
+
+    const primaryKeys = schema.columns.filter((column) => column.pk);
+
+    if (primaryKeys.length === 1) {
+        state.primaryKey = primaryKeys[0].name;
+    }
+
+    await loadPage();
 }
 
 async function loadPage() {
-  if (!state.table) return;
+    if (!state.table) return;
 
-  const requestId = ++state.requestId;
-  const q = document.getElementById("q").value.trim();
+    const requestId = ++state.requestId;
+    const q = document.getElementById("q").value.trim();
 
-  const params = new URLSearchParams({
-    limit: String(state.limit),
-    offset: String(state.offset),
-  });
+    const params = new URLSearchParams({
+        limit: String(state.limit),
+        offset: String(state.offset),
+    });
 
-  if (q) {
-    params.set("search", q);
-  }
-
-  try {
-    const data = await api(
-      `/school/api/tables/${encodeURIComponent(state.table)}?${params}`
-    );
-
-    // Ignore an older response if a newer request has already started.
-    if (requestId !== state.requestId) return;
-
-    document.getElementById("meta").textContent =
-      `${data.table} · showing ${data.returned} of ${data.total} ` +
-      `(offset ${data.offset})`;
-
-    const prefer = [
-      "Roll No",
-      "Student Code",
-      "Student Name",
-      "Student DOB",
-    ];
-
-    let cols = prefer.filter((c) => data.columns.includes(c));
-
-    if (cols.length === 0) {
-      cols = data.columns.slice(0, 5);
+    if (q) {
+        params.set("search", q);
     }
 
-    if (data.rows.length === 0) {
-      document.getElementById("out").innerHTML =
-        "<p class='err'>No rows</p>";
-    } else {
-      let html =
-        "<table><thead><tr>" +
-        cols.map((c) => `<th>${esc(c)}</th>`).join("") +
-        "</tr></thead><tbody>";
+    try {
+        const data = await api(
+            `/school/api/tables/${encodeURIComponent(state.table)}?${params}`
+        );
 
-      for (const row of data.rows) {
-        const studentCode = row["Student Code"];
+        // Ignore an older response if a newer request has already started.
+        if (requestId !== state.requestId) return;
 
-        const rowClass = studentCode != null ? "student-row" : "";
+        document.getElementById("meta").textContent =
+            `${data.table} · showing ${data.returned} of ${data.total} ` +
+            `(offset ${data.offset})`;
 
-        const dataAttribute =
-          studentCode != null
-            ? ` data-student-code="${esc(studentCode)}"`
-            : "";
+        const prefer = [
+            "Roll No",
+            "Student Code",
+            "Student Name",
+            "Student DOB",
+        ];
 
-        html += `<tr class="${rowClass}"${dataAttribute}>`;
+        let cols = prefer.filter((c) => data.columns.includes(c));
 
-        html += cols
-          .map((c) => `<td>${esc(row[c])}</td>`)
-          .join("");
+        if (cols.length === 0) {
+            cols = data.columns.slice(0, 5);
+        }
 
-        html += "</tr>";
-      }
+        if (data.rows.length === 0) {
+            document.getElementById("out").innerHTML =
+                "<p class='err'>No rows</p>";
+        } else {
+            let html =
+                "<table><thead><tr>" +
+                cols.map((c) => `<th>${esc(c)}</th>`).join("") +
+                "</tr></thead><tbody>";
 
-      html += "</tbody></table>";
+            for (const row of data.rows) {
+                const studentId =
+                    state.primaryKey != null ? row[state.primaryKey] : null;
 
-      document.getElementById("out").innerHTML = html;
+                const rowClass = studentId != null ? "student-row" : "";
 
-      document.querySelectorAll(".student-row").forEach((row) => {
-        row.addEventListener("click", () => {
-          const studentCode = row.dataset.studentCode;
+                const dataAttribute =
+                    studentId != null ?
+                    ` data-student-id="${esc(studentId)}"` :
+                    "";
 
-          if (studentCode) {
-            loadStudent(studentCode);
-          }
-        });
-      });
+                html += `<tr class="${rowClass}"${dataAttribute}>`;
+
+                html += cols
+                    .map((c) => `<td>${esc(row[c])}</td>`)
+                    .join("");
+
+                html += "</tr>";
+            }
+
+            html += "</tbody></table>";
+
+            document.getElementById("out").innerHTML = html;
+
+            document.querySelectorAll(".student-row").forEach((row) => {
+                row.addEventListener("click", () => {
+                    const studentId = row.dataset.studentId;
+
+                    if (studentId) {
+                        loadStudent(studentId);
+                    }
+                });
+            });
+        }
+
+        updatePagination(data);
+    } catch (error) {
+        if (requestId !== state.requestId) return;
+
+        document.getElementById("out").innerHTML =
+            `<p class="err">${esc(error.message)}</p>`;
     }
-
-    updatePagination(data);
-  } catch (error) {
-    if (requestId !== state.requestId) return;
-
-    document.getElementById("out").innerHTML =
-      `<p class="err">${esc(error.message)}</p>`;
-  }
 }
 
-async function loadStudent(studentCode) {
-  if (!state.table) return;
+async function loadStudent(studentId) {
+    if (!state.table) return;
 
-  try {
-    const data = await api(
-      `/school/api/tables/${encodeURIComponent(
+    try {
+        const data = await api(
+            `/school/api/tables/${encodeURIComponent(
         state.table
-      )}/students/${encodeURIComponent(studentCode)}`
-    );
+      )}/students/${encodeURIComponent(studentId)}`
+        );
 
-    renderStudent(data);
-  } catch (error) {
-    document.getElementById("out").innerHTML =
-      `<p class="err">${esc(error.message)}</p>`;
-  }
+        renderStudent(data);
+    } catch (error) {
+        document.getElementById("out").innerHTML =
+            `<p class="err">${esc(error.message)}</p>`;
+    }
 }
 
 function renderStudent(data) {
-  const student = data.student;
+    const student = data.student;
 
-  let html = `
+    let html = `
     <div class="student-detail">
       <div class="student-detail-header">
         <button type="button" id="back-to-table">← Back</button>
@@ -180,56 +195,59 @@ function renderStudent(data) {
       <dl>
   `;
 
-  for (const [key, value] of Object.entries(student)) {
-    html += `
+    for (const [key, value] of Object.entries(student)) {
+        html += `
       <dt>${esc(key)}</dt>
       <dd>${esc(value)}</dd>
     `;
-  }
+    }
 
-  html += `
+    html += `
       </dl>
     </div>
   `;
 
-  document.getElementById("out").innerHTML = html;
+    document.getElementById("out").innerHTML = html;
 
-  document.getElementById("meta").textContent =
-    `${data.table} · Student ${student["Student Code"] ?? ""}`;
+    const studentId =
+        state.primaryKey != null ? student[state.primaryKey] : "";
 
-  document.getElementById("back-to-table").onclick = () => {
-    loadPage();
-  };
+    document.getElementById("meta").textContent =
+        `${data.table} · Student ${studentId ?? ""}`;
+
+    document.getElementById("back-to-table").onclick = () => {
+        loadPage();
+    };
 }
 
 function updatePagination(data) {
-  const prev = document.getElementById("prev");
-  const next = document.getElementById("next");
+    const prev = document.getElementById("prev");
+    const next = document.getElementById("next");
 
-  prev.disabled = data.offset <= 0;
-  next.disabled = data.offset + data.returned >= data.total;
+    prev.disabled = data.offset <= 0;
+    next.disabled = data.offset + data.returned >= data.total;
 }
 
 document.getElementById("prev").onclick = () => {
-  state.offset = Math.max(0, state.offset - state.limit);
-  loadPage();
+    state.offset = Math.max(0, state.offset - state.limit);
+    loadPage();
 };
 
 document.getElementById("next").onclick = () => {
-  state.offset += state.limit;
-  loadPage();
+    state.offset += state.limit;
+    loadPage();
 };
 
 document.getElementById("q").addEventListener("input", () => {
-  clearTimeout(state.searchTimer);
+    clearTimeout(state.searchTimer);
 
-  state.searchTimer = setTimeout(() => {
-    state.offset = 0;
-    loadPage();
-  }, 300);
+    state.searchTimer = setTimeout(() => {
+        state.offset = 0;
+        loadPage();
+    }, 300);
 });
 
 loadTables().catch((e) => {
-  document.getElementById("out").innerHTML =
-    `<p class="err">${esc(e.message)}</p>`;
+    document.getElementById("out").innerHTML =
+        `<p class="err">${esc(e.message)}</p>`;
 });

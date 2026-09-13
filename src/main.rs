@@ -86,7 +86,7 @@ async fn info() -> Json<Info> {
             "GET /school/api/tables",
             "GET /school/api/tables/:table",
             "GET /school/api/tables/:table/schema",
-            "GET /school/api/tables/:table/students/:student_code",
+            "GET /school/api/tables/:table/students/:student_id",
         ],
         build_profile: if cfg!(debug_assertions) {
             "debug"

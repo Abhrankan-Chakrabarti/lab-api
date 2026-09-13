@@ -185,26 +185,38 @@ impl SchoolDb {
         }
 
         let has_student_table = tables.iter().any(|table| {
-            let pragma_table = quote_ident(table);
-            let sql = format!("PRAGMA table_info({pragma_table})");
+            let quoted_table = quote_ident(table);
 
-            let Ok(mut stmt) = conn.prepare(&sql) else {
-                return false;
+            let mut stmt = match conn.prepare(&format!("PRAGMA table_info({quoted_table})")) {
+                Ok(stmt) => stmt,
+                Err(_) => return false,
             };
 
-            let Ok(columns) = stmt.query_map([], |row| row.get::<_, String>(1)) else {
-                return false;
+            let mut rows = match stmt.query([]) {
+                Ok(rows) => rows,
+                Err(_) => return false,
             };
 
-            let names = columns.collect::<Result<Vec<_>, _>>().unwrap_or_default();
+            let mut has_student_name = false;
 
-            names.iter().any(|name| name == "Student Code")
-                && names.iter().any(|name| name == "Student Name")
+            while let Ok(Some(row)) = rows.next() {
+                let name: String = match row.get(1) {
+                    Ok(name) => name,
+                    Err(_) => return false,
+                };
+
+                if name == "Student Name" {
+                    has_student_name = true;
+                    break;
+                }
+            }
+
+            has_student_name && primary_key_column_from_connection(&conn, table).is_ok()
         });
 
         if !has_student_table {
             return Err(DbError::Database(
-                "database contains no table with both Student Code and Student Name columns"
+                "database contains no table with a supported student name and primary key"
                     .to_owned(),
             ));
         }
@@ -321,6 +333,31 @@ impl SchoolDb {
         })
     }
 
+    /// Return the single-column primary key of a table.
+    ///
+    /// Student detail lookups use the table's actual primary key rather than
+    /// assuming every table has a "Student Code" column.
+    ///
+    /// Tables with no primary key or a composite primary key are not valid
+    /// student-detail targets.
+    fn primary_key_column(&self, table: &str) -> Result<String, DbError> {
+        let schema = self.schema(table)?;
+
+        let primary_keys: Vec<&ColumnMeta> =
+            schema.columns.iter().filter(|column| column.pk).collect();
+
+        match primary_keys.as_slice() {
+            [column] if SAFE_COLUMNS.contains(&column.name.as_str()) => Ok(column.name.clone()),
+            [] => Err(DbError::Database("table has no primary key".to_owned())),
+            [_] => Err(DbError::Database(
+                "table primary key is not a safe student identifier".to_owned(),
+            )),
+            _ => Err(DbError::Database(
+                "table has a composite primary key".to_owned(),
+            )),
+        }
+    }
+
     /// Return only the safe columns that actually exist in the table.
     ///
     /// This allows the database schema to remain dynamic while preventing
@@ -339,6 +376,38 @@ impl SchoolDb {
             .filter(|column| available.contains(**column))
             .map(|column| (*column).to_owned())
             .collect())
+    }
+
+    /// Return columns that are appropriate for the student detail view.
+    ///
+    /// The detail view is schema-driven, but highly sensitive financial,
+    /// identity, and contact fields are excluded from the API response.
+    fn student_detail_columns(&self, table: &str) -> Result<Vec<String>, DbError> {
+        const SENSITIVE_COLUMNS: &[&str] = &[
+            "Guardian Number",
+            "Student Contact Number",
+            "Guardian Contact Number",
+            "Bank IFS Code",
+            "Bank A/C number",
+            "Aadhaar Y/N",
+        ];
+
+        let schema = self.schema(table)?;
+
+        let columns: Vec<String> = schema
+            .columns
+            .iter()
+            .filter(|column| !SENSITIVE_COLUMNS.contains(&column.name.as_str()))
+            .map(|column| column.name.clone())
+            .collect();
+
+        if columns.is_empty() {
+            return Err(DbError::Database(
+                "table has no student detail columns".to_owned(),
+            ));
+        }
+
+        Ok(columns)
     }
 
     /// Fetch one paginated table page.
@@ -496,28 +565,16 @@ impl SchoolDb {
         })
     }
 
-    /// Fetch one student using the safe Student Code identifier.
+    /// Fetch one student using the table's dynamically discovered primary key.
     ///
-    /// Only SAFE_COLUMNS are returned. No sensitive database columns can
-    /// be exposed through this lookup.
-    pub fn student_detail(&self, table: &str, student_code: i64) -> Result<StudentDetail, DbError> {
+    /// Ordinary student fields are returned while explicitly sensitive columns
+    /// remain excluded from the detail response.
+    pub fn student_detail(&self, table: &str, student_id: i64) -> Result<StudentDetail, DbError> {
         self.assert_table(table)?;
 
-        let columns = self.safe_columns(table)?;
+        let columns = self.student_detail_columns(table)?;
 
-        if columns.is_empty() {
-            return Err(DbError::Database(
-                "table has no safe student columns".to_owned(),
-            ));
-        }
-
-        let student_code_column = "Student Code";
-
-        if !columns.iter().any(|column| column == student_code_column) {
-            return Err(DbError::Database(
-                "table has no Student Code column".to_owned(),
-            ));
-        }
+        let student_key_column = self.primary_key_column(table)?;
 
         let conn = self.conn()?;
 
@@ -526,15 +583,15 @@ impl SchoolDb {
 
         let select_list = quoted_columns.join(", ");
         let quoted_table = quote_ident(table);
-        let quoted_student_code = quote_ident(student_code_column);
+        let quoted_student_key = quote_ident(&student_key_column);
 
         let sql = format!(
             r#"
-                SELECT {select_list}
-                FROM {quoted_table}
-                WHERE {quoted_student_code} = ?1
-                LIMIT 1
-            "#
+        SELECT {select_list}
+        FROM {quoted_table}
+        WHERE {quoted_student_key} = ?1
+        LIMIT 1
+        "#
         );
 
         let mut stmt = conn
@@ -542,7 +599,7 @@ impl SchoolDb {
             .map_err(|error| DbError::Database(error.to_string()))?;
 
         let mut rows = stmt
-            .query([student_code])
+            .query([student_id])
             .map_err(|error| DbError::Database(error.to_string()))?;
 
         match rows
@@ -637,6 +694,49 @@ fn value_from_row(row: &Row<'_>, index: usize) -> rusqlite::Result<Value> {
 
         // Never expose arbitrary binary data through this API.
         ValueRef::Blob(_) => Ok(Value::String("[blob]".to_owned())),
+    }
+}
+
+fn primary_key_column_from_connection(conn: &Connection, table: &str) -> Result<String, DbError> {
+    let quoted_table = quote_ident(table);
+
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({quoted_table})"))
+        .map_err(|error| DbError::Database(error.to_string()))?;
+
+    let mut rows = stmt
+        .query([])
+        .map_err(|error| DbError::Database(error.to_string()))?;
+
+    let mut primary_keys = Vec::new();
+
+    while let Some(row) = rows
+        .next()
+        .map_err(|error| DbError::Database(error.to_string()))?
+    {
+        let name: String = row
+            .get(1)
+            .map_err(|error| DbError::Database(error.to_string()))?;
+
+        let is_primary_key: bool = row
+            .get::<_, i64>(5)
+            .map_err(|error| DbError::Database(error.to_string()))?
+            != 0;
+
+        if is_primary_key {
+            primary_keys.push(name);
+        }
+    }
+
+    match primary_keys.as_slice() {
+        [column] if SAFE_COLUMNS.contains(&column.as_str()) => Ok(column.clone()),
+        [] => Err(DbError::Database("table has no primary key".to_owned())),
+        [_] => Err(DbError::Database(
+            "table primary key is not a safe student identifier".to_owned(),
+        )),
+        _ => Err(DbError::Database(
+            "table has a composite primary key".to_owned(),
+        )),
     }
 }
 
@@ -1012,6 +1112,129 @@ mod tests {
     }
 
     #[test]
+    fn primary_key_column_discovers_student_code() {
+        let path = test_db_path();
+        let db = create_test_db(&path);
+
+        let key = db
+            .primary_key_column("II_A")
+            .expect("primary key discovery failed");
+
+        assert_eq!(key, "Student Code");
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn primary_key_column_rejects_missing_primary_key() {
+        let path = test_db_path();
+
+        let conn = Connection::open(&path).expect("failed to create database");
+
+        conn.execute_batch(
+            r#"
+            CREATE TABLE LPP (
+                "Roll No" INTEGER,
+                "Student Name" TEXT
+            );
+            "#,
+        )
+        .expect("failed to create test table");
+
+        drop(conn);
+
+        let db = SchoolDb::open(&path).expect("failed to open SchoolDb");
+
+        let result = db.primary_key_column("LPP");
+
+        assert!(matches!(
+            result,
+            Err(DbError::Database(message))
+                if message.contains("no primary key")
+        ));
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn primary_key_column_discovers_roll_no() {
+        let path = test_db_path();
+
+        let conn = Connection::open(&path).expect("failed to create database");
+
+        conn.execute_batch(
+            r#"
+        CREATE TABLE LPP (
+            "Roll No" INTEGER PRIMARY KEY,
+            "Student Name" TEXT
+        );
+        "#,
+        )
+        .expect("failed to create LPP table");
+
+        drop(conn);
+
+        let db = SchoolDb::open(&path).expect("failed to open SchoolDb");
+
+        let key = db
+            .primary_key_column("LPP")
+            .expect("primary key discovery failed");
+
+        assert_eq!(key, "Roll No");
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn student_detail_uses_roll_no_for_lpp() {
+        let path = test_db_path();
+
+        let conn = Connection::open(&path).expect("failed to create database");
+
+        conn.execute_batch(
+            r#"
+        CREATE TABLE LPP (
+            "Roll No" INTEGER PRIMARY KEY,
+            "Student Name" TEXT,
+            "Student DOB" DATE,
+            "Academic Year" TEXT
+        );
+
+        INSERT INTO LPP (
+            "Roll No",
+            "Student Name",
+            "Student DOB",
+            "Academic Year"
+        )
+        VALUES (
+            7,
+            'LPP Student',
+            '2010-01-02',
+            '2026-27'
+        );
+        "#,
+        )
+        .expect("failed to create LPP test data");
+
+        drop(conn);
+
+        let db = SchoolDb::open(&path).expect("failed to open SchoolDb");
+
+        let detail = db
+            .student_detail("LPP", 7)
+            .expect("LPP student detail query failed");
+
+        assert_eq!(detail.table, "LPP");
+        assert_eq!(detail.student.get("Roll No"), Some(&Value::from(7)));
+        assert_eq!(
+            detail.student.get("Student Name"),
+            Some(&Value::from("LPP Student"))
+        );
+
+        cleanup(&path);
+    }
+
+    #[test]
     fn tables_are_discovered_without_hardcoded_class_names() {
         let path = test_db_path();
         let db = create_test_db(&path);
@@ -1080,7 +1303,7 @@ mod tests {
     }
 
     #[test]
-    fn student_detail_returns_only_safe_columns() {
+    fn student_detail_returns_non_sensitive_columns() {
         let path = test_db_path();
         let db = create_test_db(&path);
 
@@ -1105,9 +1328,16 @@ mod tests {
             Some(&Value::from("2026-27"))
         );
 
+        assert_eq!(
+            detail.student.get("Father Name"),
+            Some(&Value::from("Alice Father"))
+        );
+        assert_eq!(
+            detail.student.get("Mother Name"),
+            Some(&Value::from("Alice Mother"))
+        );
+
         let sensitive = [
-            "Father Name",
-            "Mother Name",
             "Guardian Number",
             "Student Contact Number",
             "Guardian Contact Number",
@@ -1120,6 +1350,116 @@ mod tests {
             assert!(
                 !detail.student.contains_key(column),
                 "sensitive column {column:?} leaked into student detail"
+            );
+        }
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn student_detail_returns_all_non_sensitive_lpp_columns() {
+        let path = test_db_path();
+
+        let conn = Connection::open(&path).expect("failed to create database");
+
+        conn.execute_batch(
+            r#"
+        CREATE TABLE LPP (
+            "Roll No" INTEGER PRIMARY KEY,
+            "Date" DATE,
+            "Student Name" TEXT,
+            "Student DOB" DATE,
+            "Academic Year" TEXT,
+            "Father Name" TEXT,
+            "Mother Name" TEXT,
+            "Guardian Number" TEXT,
+            "Student Contact Number" INTEGER,
+            "Guardian Contact Number" INTEGER,
+            "Bank IFS Code" TEXT,
+            "Bank A/C number" TEXT,
+            "Aadhaar Y/N" TEXT
+        );
+
+        INSERT INTO LPP (
+            "Roll No",
+            "Date",
+            "Student Name",
+            "Student DOB",
+            "Academic Year",
+            "Father Name",
+            "Mother Name",
+            "Guardian Number",
+            "Student Contact Number",
+            "Guardian Contact Number",
+            "Bank IFS Code",
+            "Bank A/C number",
+            "Aadhaar Y/N"
+        )
+        VALUES (
+            1,
+            '2026-09-01',
+            'LPP Student',
+            '2021-11-20',
+            '2026-27',
+            'LPP Father',
+            'LPP Mother',
+            '9999999999',
+            9000000001,
+            9000000002,
+            'TEST000001',
+            '123456789012',
+            'Y'
+        );
+        "#,
+        )
+        .expect("failed to create LPP test data");
+
+        drop(conn);
+
+        let db = SchoolDb::open(&path).expect("failed to open SchoolDb");
+
+        let detail = db
+            .student_detail("LPP", 1)
+            .expect("LPP student detail query failed");
+
+        assert_eq!(detail.table, "LPP");
+
+        assert_eq!(detail.student.get("Roll No"), Some(&Value::from(1)));
+        assert_eq!(detail.student.get("Date"), Some(&Value::from("2026-09-01")));
+        assert_eq!(
+            detail.student.get("Student Name"),
+            Some(&Value::from("LPP Student"))
+        );
+        assert_eq!(
+            detail.student.get("Student DOB"),
+            Some(&Value::from("2021-11-20"))
+        );
+        assert_eq!(
+            detail.student.get("Academic Year"),
+            Some(&Value::from("2026-27"))
+        );
+        assert_eq!(
+            detail.student.get("Father Name"),
+            Some(&Value::from("LPP Father"))
+        );
+        assert_eq!(
+            detail.student.get("Mother Name"),
+            Some(&Value::from("LPP Mother"))
+        );
+
+        let sensitive = [
+            "Guardian Number",
+            "Student Contact Number",
+            "Guardian Contact Number",
+            "Bank IFS Code",
+            "Bank A/C number",
+            "Aadhaar Y/N",
+        ];
+
+        for column in sensitive {
+            assert!(
+                !detail.student.contains_key(column),
+                "sensitive column {column:?} leaked into LPP student detail"
             );
         }
 
@@ -1217,7 +1557,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(DbError::Database(message))
-                if message.contains("Student Code and Student Name")
+                if message.contains("supported student name and primary key")
         ));
 
         cleanup(&path);
