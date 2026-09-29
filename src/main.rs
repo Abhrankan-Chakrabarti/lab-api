@@ -3,7 +3,6 @@ use serde::Serialize;
 use std::fs;
 use std::net::SocketAddr;
 use std::process::Command;
-use std::sync::Arc;
 use tower_http::services::ServeDir;
 
 mod school;
@@ -86,7 +85,8 @@ async fn info() -> Json<Info> {
             "GET /school/api/tables",
             "GET /school/api/tables/:table",
             "GET /school/api/tables/:table/schema",
-            "GET /school/api/tables/:table/students/:student_id",
+            "GET /school/api/tables/:table/students/:student_code",
+            "GET /school/api/admin/tables/:table/students/:student_code",
         ],
         build_profile: if cfg!(debug_assertions) {
             "debug"
@@ -261,7 +261,7 @@ fn school_routes() -> Router {
         Ok(db) => {
             eprintln!("school database: {database_path}");
 
-            school_router(SchoolState { db: Arc::new(db) })
+            school_router(SchoolState::new(db))
         }
 
         Err(error) => {

@@ -2,19 +2,43 @@ use super::db::{DbError, SchoolDb};
 
 use axum::{
     extract::{Path, Query, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
     routing::get,
     Json, Router,
 };
 
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 /// Shared application state for the School API.
 #[derive(Clone)]
 pub struct SchoolState {
     pub db: Arc<SchoolDb>,
+    pub admin_users: Arc<HashSet<String>>,
+}
+
+impl SchoolState {
+    pub fn new(db: SchoolDb) -> Self {
+        Self {
+            db: Arc::new(db),
+            admin_users: Arc::new(admin_users_from_env()),
+        }
+    }
+}
+
+fn admin_users_from_env() -> HashSet<String> {
+    std::env::var("LAB_API_ADMIN_USERS")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|user| !user.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn is_admin(user: &str, admin_users: &HashSet<String>) -> bool {
+    !user.is_empty() && admin_users.contains(user)
 }
 
 /// Query parameters for paginated table requests.
@@ -167,6 +191,39 @@ async fn student_detail(
     }
 }
 
+/// Return one student with every schema column.
+///
+/// GET /school/api/admin/tables/:table/students/:student_code
+///
+/// This endpoint requires an authenticated Nginx username in
+/// `X-Authenticated-User` and that username must be listed in
+/// `LAB_API_ADMIN_USERS`.
+async fn student_detail_full(
+    headers: HeaderMap,
+    State(state): State<SchoolState>,
+    Path((table, student_code)): Path<(String, i64)>,
+) -> impl IntoResponse {
+    let user = headers
+        .get("X-Authenticated-User")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+
+    if !is_admin(user, &state.admin_users) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(ErrBody {
+                error: "admin access required".to_owned(),
+            }),
+        )
+            .into_response();
+    }
+
+    match state.db.student_detail_full(&table, student_code) {
+        Ok(result) => Json(result).into_response(),
+        Err(error) => map_err(error).into_response(),
+    }
+}
+
 /// Build the School API router.
 ///
 /// All School API endpoints live below /school/api/.
@@ -179,6 +236,10 @@ pub fn router(state: SchoolState) -> Router {
         .route(
             "/school/api/tables/:table/students/:student_code",
             get(student_detail),
+        )
+        .route(
+            "/school/api/admin/tables/:table/students/:student_code",
+            get(student_detail_full),
         )
         .route("/school/api/tables/:table", get(table_page))
         .with_state(state)
@@ -277,7 +338,10 @@ mod tests {
     }
 
     fn test_router(db: SchoolDb) -> Router {
-        router(SchoolState { db: Arc::new(db) })
+        router(SchoolState {
+            db: Arc::new(db),
+            admin_users: Arc::new(["abhrankan".to_owned()].into_iter().collect()),
+        })
     }
 
     #[tokio::test]
@@ -312,6 +376,91 @@ mod tests {
         assert!(body["student"].get("Bank IFS Code").is_none());
         assert!(body["student"].get("Bank A/C number").is_none());
         assert!(body["student"].get("Aadhaar Y/N").is_none());
+
+        cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn admin_student_detail_returns_sensitive_fields() {
+        let path = test_db_path("admin-student");
+        let db = create_test_db(&path);
+        let router = test_router(db);
+
+        let (status, body) = json_response(
+            router,
+            Request::get("/school/api/admin/tables/II_A/students/1001")
+                .header("X-Authenticated-User", "abhrankan")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["student"]["Bank A/C number"], "SENSITIVEACCOUNT");
+        assert_eq!(body["student"]["Guardian Number"], "9999999999");
+        assert_eq!(body["student"]["Aadhaar Y/N"], "Y");
+
+        cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn non_admin_gets_403() {
+        let path = test_db_path("non-admin");
+        let db = create_test_db(&path);
+        let router = test_router(db);
+
+        let (status, body) = json_response(
+            router,
+            Request::get("/school/api/admin/tables/II_A/students/1001")
+                .header("X-Authenticated-User", "teacher1")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["error"], "admin access required");
+
+        cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn missing_header_gets_403() {
+        let path = test_db_path("missing-admin-header");
+        let db = create_test_db(&path);
+        let router = test_router(db);
+
+        let (status, body) = json_response(
+            router,
+            Request::get("/school/api/admin/tables/II_A/students/1001")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["error"], "admin access required");
+
+        cleanup(&path);
+    }
+
+    #[tokio::test]
+    async fn admin_student_detail_missing_student_returns_not_found() {
+        let path = test_db_path("admin-missing-student");
+        let db = create_test_db(&path);
+        let router = test_router(db);
+
+        let (status, body) = json_response(
+            router,
+            Request::get("/school/api/admin/tables/II_A/students/9999")
+                .header("X-Authenticated-User", "abhrankan")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["error"], "student not found");
 
         cleanup(&path);
     }

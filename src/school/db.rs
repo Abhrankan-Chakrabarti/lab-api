@@ -565,6 +565,75 @@ impl SchoolDb {
         })
     }
 
+    /// Fetch one student using every column discovered from the table schema.
+    ///
+    /// This method is intentionally separate from `student_detail()`: it is
+    /// reserved for the authenticated admin API and must never be used by the
+    /// normal student-detail endpoint.
+    pub fn student_detail_full(
+        &self,
+        table: &str,
+        student_id: i64,
+    ) -> Result<StudentDetail, DbError> {
+        self.assert_table(table)?;
+
+        let schema = self.schema(table)?;
+        let columns: Vec<String> = schema
+            .columns
+            .into_iter()
+            .map(|column| column.name)
+            .collect();
+
+        if columns.is_empty() {
+            return Err(DbError::Database(
+                "table has no student detail columns".to_owned(),
+            ));
+        }
+
+        let student_key_column = self.primary_key_column(table)?;
+        let conn = self.conn()?;
+
+        let quoted_columns: Vec<String> =
+            columns.iter().map(|column| quote_ident(column)).collect();
+
+        let select_list = quoted_columns.join(", ");
+        let quoted_table = quote_ident(table);
+        let quoted_student_key = quote_ident(&student_key_column);
+
+        let sql = format!(
+            r#"
+        SELECT {select_list}
+        FROM {quoted_table}
+        WHERE {quoted_student_key} = ?1
+        LIMIT 1
+        "#
+        );
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|error| DbError::Database(error.to_string()))?;
+
+        let mut rows = stmt
+            .query([student_id])
+            .map_err(|error| DbError::Database(error.to_string()))?;
+
+        match rows
+            .next()
+            .map_err(|error| DbError::Database(error.to_string()))?
+        {
+            Some(row) => {
+                let student = row_to_json(row, &columns)
+                    .map_err(|error| DbError::Database(error.to_string()))?;
+
+                Ok(StudentDetail {
+                    table: table.to_owned(),
+                    student,
+                })
+            }
+            None => Err(DbError::StudentNotFound),
+        }
+    }
+
     /// Fetch one student using the table's dynamically discovered primary key.
     ///
     /// Ordinary student fields are returned while explicitly sensitive columns
@@ -1300,6 +1369,90 @@ mod tests {
         assert_eq!(page.total, 4);
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn student_detail_full_returns_all_columns() {
+        let path = test_db_path();
+        let db = create_test_db(&path);
+
+        let detail = db
+            .student_detail_full("II_A", 1001)
+            .expect("full student detail query failed");
+
+        assert_eq!(detail.table, "II_A");
+        assert_eq!(detail.student.get("Student Code"), Some(&Value::from(1001)));
+        assert_eq!(
+            detail.student.get("Student Name"),
+            Some(&Value::from("Alice"))
+        );
+        assert_eq!(
+            detail.student.get("Guardian Number"),
+            Some(&Value::from("9999999999"))
+        );
+        assert_eq!(
+            detail.student.get("Bank IFS Code"),
+            Some(&Value::from("SENSITIVEIFS"))
+        );
+        assert_eq!(
+            detail.student.get("Bank A/C number"),
+            Some(&Value::from("SENSITIVEACCOUNT"))
+        );
+        assert_eq!(detail.student.get("Aadhaar Y/N"), Some(&Value::from("Y")));
+
+        assert_eq!(detail.student.len(), 13);
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn student_detail_full_lpp_works() {
+        let path = test_db_path();
+
+        let conn = Connection::open(&path).expect("failed to create database");
+        conn.execute_batch(
+            r#"
+        CREATE TABLE LPP (
+            "Roll No" INTEGER PRIMARY KEY,
+            "Student Name" TEXT,
+            "Bank A/C number" TEXT
+        );
+
+        INSERT INTO LPP ("Roll No", "Student Name", "Bank A/C number")
+        VALUES (7, 'LPP Student', '123456');
+        "#,
+        )
+        .expect("failed to create LPP test data");
+        drop(conn);
+
+        let db = SchoolDb::open(&path).expect("failed to open SchoolDb");
+        let detail = db
+            .student_detail_full("LPP", 7)
+            .expect("full LPP student detail query failed");
+
+        assert_eq!(detail.student.get("Roll No"), Some(&Value::from(7)));
+        assert_eq!(
+            detail.student.get("Student Name"),
+            Some(&Value::from("LPP Student"))
+        );
+        assert_eq!(
+            detail.student.get("Bank A/C number"),
+            Some(&Value::from("123456"))
+        );
+
+        cleanup(&path);
+    }
+
+    #[test]
+    fn student_detail_full_missing_student() {
+        let path = test_db_path();
+        let db = create_test_db(&path);
+
+        let result = db.student_detail_full("II_A", 9999);
+
+        assert!(matches!(result, Err(DbError::StudentNotFound)));
+
+        cleanup(&path);
     }
 
     #[test]

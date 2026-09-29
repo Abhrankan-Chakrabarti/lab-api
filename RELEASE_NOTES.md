@@ -1,3 +1,21 @@
+# lab-api v0.7.0
+
+## Added
+
+- Added an admin-only full student-detail endpoint at `GET /school/api/admin/tables/{table}/students/{student_code}`.
+- Added `SchoolDb::student_detail_full()` for schema-driven retrieval of all table columns.
+- Added application-level admin authorization using `X-Authenticated-User` and `LAB_API_ADMIN_USERS`.
+- Added tests covering full-column retrieval, LPP primary-key behavior, missing students, admin access, non-admin access, and missing authentication headers.
+- Updated the hardened systemd service example with `LAB_API_ADMIN_USERS`.
+
+## Security
+
+- The existing privacy-filtered `GET /school/api/tables/{table}/students/{student_code}` endpoint remains unchanged.
+- Full student records are not returned unless the authenticated username is explicitly present in the configured admin allowlist.
+- The backend remains bound to `127.0.0.1:8088`; Nginx remains the public HTTPS and Basic Authentication boundary.
+
+---
+
 # lab-api v0.6.0
 
 Release date: 2026-09-13

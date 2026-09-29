@@ -69,6 +69,51 @@ The backend itself is only accessible from the local machine. It should not be e
 | GET | /v1/catalan/:n | No | Catalan number, compatibility alias, with `0 ≤ n ≤ 34` |
 | GET | /v1/snapshot | Basic Auth | Host/system snapshot |
 
+## School Database API
+
+The School API is read-only during normal runtime. The normal student-detail endpoint remains privacy-filtered.
+
+### Safe student detail
+
+```http
+GET /school/api/tables/{table}/students/{student_code}
+```
+
+This endpoint excludes explicitly sensitive contact, financial, and identity fields.
+
+### Admin full student detail
+
+```http
+GET /school/api/admin/tables/{table}/students/{student_code}
+```
+
+The admin endpoint returns every column discovered from the selected table schema. It requires both:
+
+1. Nginx Basic Authentication for the `/school/` location.
+2. The authenticated username in the backend `X-Authenticated-User` header and in `LAB_API_ADMIN_USERS`.
+
+Configure the backend with a comma-separated allowlist, for example:
+
+```text
+LAB_API_ADMIN_USERS=abhrankan,teacher1,principal
+```
+
+Missing or non-admin usernames receive:
+
+```json
+{
+  "error": "admin access required"
+}
+```
+
+The backend listens only on `127.0.0.1:8088`, so the authenticated identity header is intended to be supplied by the local Nginx reverse proxy rather than by an Internet client. Nginx should set it inside the authenticated `/school/` location:
+
+```nginx
+proxy_set_header X-Authenticated-User $remote_user;
+```
+
+Do not expose the backend directly on a public interface.
+
 ## HTTP status codes
 
 The API uses the standard HTTP responses implied by the handler behavior:
