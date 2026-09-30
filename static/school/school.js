@@ -13,7 +13,9 @@ async function api(path) {
     });
 
     if (!r.ok) {
-        throw new Error(`${r.status} ${await r.text()}`);
+        const error = new Error(`${r.status} ${await r.text()}`);
+        error.status = r.status;
+        throw error;
     }
 
     return r.json();
@@ -169,28 +171,49 @@ async function loadPage() {
 async function loadStudent(studentId) {
     if (!state.table) return;
 
-    try {
-        const data = await api(
-            `/school/api/tables/${encodeURIComponent(
-        state.table
-      )}/students/${encodeURIComponent(studentId)}`
-        );
+    const table = encodeURIComponent(state.table);
+    const student = encodeURIComponent(studentId);
 
-        renderStudent(data);
+    try {
+        let data;
+        let isAdmin = false;
+
+        try {
+            data = await api(
+                `/school/api/admin/tables/${table}/students/${student}`
+            );
+            isAdmin = true;
+        } catch (error) {
+            if (error.status !== 403) {
+                throw error;
+            }
+
+            data = await api(
+                `/school/api/tables/${table}/students/${student}`
+            );
+        }
+
+        renderStudent(data, isAdmin);
     } catch (error) {
         document.getElementById("out").innerHTML =
             `<p class="err">${esc(error.message)}</p>`;
     }
 }
 
-function renderStudent(data) {
+function renderStudent(data, isAdmin = false) {
     const student = data.student;
+    const accessBadge = isAdmin
+        ? '<span class="admin-badge">Admin · full record</span>'
+        : '<span class="privacy-badge">Privacy-filtered</span>';
 
     let html = `
     <div class="student-detail">
       <div class="student-detail-header">
         <button type="button" id="back-to-table">← Back</button>
-        <h2>Student Details</h2>
+        <div>
+          <h2>Student Details</h2>
+          ${accessBadge}
+        </div>
       </div>
       <dl>
   `;

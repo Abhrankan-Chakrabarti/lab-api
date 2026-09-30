@@ -7,12 +7,15 @@
 - Added application-level admin authorization using `X-Authenticated-User` and `LAB_API_ADMIN_USERS`.
 - Added tests covering full-column retrieval, LPP primary-key behavior, missing students, admin access, non-admin access, and missing authentication headers.
 - Updated the hardened systemd service example with `LAB_API_ADMIN_USERS`.
+- Updated the School Database frontend to try the admin full-detail endpoint first and fall back to the privacy-filtered endpoint for non-admin users.
+- Added explicit frontend access-state indicators for full admin records and privacy-filtered records.
 
 ## Security
 
 - The existing privacy-filtered `GET /school/api/tables/{table}/students/{student_code}` endpoint remains unchanged.
 - Full student records are not returned unless the authenticated username is explicitly present in the configured admin allowlist.
 - The backend remains bound to `127.0.0.1:8088`; Nginx remains the public HTTPS and Basic Authentication boundary.
+- The portal does not determine admin privileges itself; a `403` from the admin endpoint is treated as the authorization boundary and triggers the safe fallback.
 
 ---
 
