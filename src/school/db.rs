@@ -870,9 +870,9 @@ mod tests {
             )
             VALUES
                 (1001, 1, 'Alice', '2018-01-15', '2026-27',
-                 'Alice Father', 'Alice Mother', '9999999999',
-                 9000000001, 9000000002, 'TEST000001',
-                 '123456789012', 'Y'),
+                'Alice Father', 'Alice Mother', '9999999999',
+                9000000001, 9000000002, 'SENSITIVEIFS',
+                'SENSITIVEACCOUNT', 'Y'),
 
                 (1002, 2, 'Bob', '2018-02-20', '2026-27',
                  'Bob Father', 'Bob Mother', '8888888888',
