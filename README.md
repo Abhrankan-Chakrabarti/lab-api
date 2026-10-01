@@ -1,8 +1,8 @@
 # lab-api
 
-**A lightweight self-hosted Rust API for system snapshots and numerical computation.**
+**A lightweight self-hosted Rust API for system snapshots, mathematics, and School data.**
 
-`lab-api` is a small REST API written in Rust using [Axum](https://github.com/tokio-rs/axum). It provides service health checks, public application metadata, authenticated system information, and numerical computation endpoints.
+`lab-api` is a Rust/Axum service with a public read-only compute API and a separate School data module. The core API provides health, metadata, mathematical calculations, and an authenticated host snapshot. School provides privacy-filtered student data and separately authorized admin details backed by SQLite.
 
 The application is designed to run as a **localhost-only systemd service**, with Nginx providing the public HTTPS interface and reverse proxy.
 
@@ -16,6 +16,9 @@ The application is designed to run as a **localhost-only systemd service**, with
 - 📊 Linux system snapshot endpoint
 - ℹ️ Public application information endpoint
 - 🔢 Catalan, Fibonacci, and GCD computation
+- 🏫 Read-only School database API with privacy-filtered student details
+- 🛡️ Allowlisted admin access to full School student records
+- 📥 Validated one-shot School database importer
 - ❤️ Simple health-check endpoint
 - ⚙️ systemd service support
 - 🐧 Linux-oriented system information
@@ -59,7 +62,9 @@ Nginx provides the public HTTPS interface and forwards requests to the local app
 
 For the canonical API contract, see [`API.md`](API.md).
 
-For the `v0.3.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
+For the `v0.7.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
+
+This README focuses on the public core `/api/*` surface. The separate School module is summarized below; see [`API.md`](API.md) and [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for its routes, privacy boundary, admin authorization, and importer history.
 
 ---
 
@@ -84,9 +89,11 @@ Example:
 }
 ```
 
+This endpoint is intended to remain publicly accessible for basic service monitoring.
+
 ### Math routes
 
-The v0.3.0 math routes are public, read-only GET endpoints:
+The core math routes are public, read-only GET endpoints:
 
 ```http
 GET /api/v1/math/catalan/:n
@@ -102,7 +109,16 @@ GET /api/v1/catalan/:n
 
 Catalan values use `u128` arithmetic and support `0 ≤ n ≤ 34`. Fibonacci values use `u128` arithmetic and support `0 ≤ n ≤ 186`; `F(186)` is the largest value in range and `n = 187` returns `400 Bad Request`.
 
-Both Catalan and Fibonacci endpoints return:
+Catalan response for `n = 10`:
+
+```json
+{
+  "n": 10,
+  "value": "16796"
+}
+```
+
+Fibonacci response for `n = 10`:
 
 ```json
 {
@@ -126,8 +142,6 @@ curl https://example.com/api/v1/math/gcd/84/30
 ```
 
 The math routes do not require authentication; the snapshot route remains protected by Basic Auth at Nginx.
-
-This endpoint is intended to remain publicly accessible for basic service monitoring.
 
 ### API Information
 
@@ -261,6 +275,18 @@ with:
 
 ---
 
+## School Module
+
+The School API is a separate read-only SQLite surface under `/school/`; it is not part of the database-free core `/api/*` service. The active database path is configured with `SCHOOL_DB_PATH` and is opened read-only during normal operation.
+
+- `GET /school/api/tables/{table}/students/{student_code}` returns privacy-filtered student details.
+- `GET /school/api/admin/tables/{table}/students/{student_code}` returns full schema details only when Nginx Basic Auth succeeds and `X-Authenticated-User` names a user in `LAB_API_ADMIN_USERS`.
+- A validated one-shot importer can replace the School database after checking the candidate file; normal API requests do not write to it.
+
+See [`API.md`](API.md) for the route and security contract and [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the School feature history.
+
+---
+
 ## Project Structure
 
 ```text
@@ -274,7 +300,12 @@ lab-api/
 ├── health-check.sh
 ├── lab-api.service.hardened
 └── src/
-    └── main.rs
+    ├── main.rs
+    └── school/
+        ├── api.rs
+        ├── db.rs
+        ├── import.rs
+        └── mod.rs
 ```
 
 ### `.gitignore`
@@ -291,11 +322,13 @@ Defines the Rust package and its dependencies:
 
 - `axum` — HTTP routing and server framework
 - `serde` — serialization and deserialization
+- `serde_json` — JSON serialization and School query result values
 - `tokio` — asynchronous runtime
+- `rusqlite` — read-only School SQLite access and validation
+- `tower-http` — static-file serving for the School portal
 
 Test-only dependencies:
 
-- `serde_json` — HTTP test response decoding
 - `tower` — Axum router testing utilities
 
 ### `src/main.rs`
@@ -310,10 +343,14 @@ Contains:
 - Fibonacci calculation
 - GCD calculation
 - Backward-compatible Catalan route
+- School API handlers and SQLite access
+- Validated School database importer
+- School admin allowlist authorization
 - Unit and HTTP router tests
 - JSON response structures
 - Local TCP listener
 - Axum server initialization
+- School API mounting and `lab-api import` command dispatch
 
 ### `API.md`
 
@@ -398,7 +435,7 @@ It retries the health endpoint and exits with:
 - Nginx for public HTTPS deployment
 - systemd for service management
 
-The application does not require a database or external application service.
+The core `/api/*` service does not use a database. The School module uses local SQLite at `SCHOOL_DB_PATH`; it requires no database server or other external service.
 
 ---
 
@@ -606,7 +643,7 @@ For the sensitive snapshot endpoint, Basic Authentication can be applied specifi
 ```nginx
 location = /api/v1/snapshot {
     auth_basic "Private API";
-    auth_basic_user_file /etc/nginx/api.htpasswd;
+  auth_basic_user_file /etc/nginx/status.htpasswd;
 
     proxy_pass http://127.0.0.1:8088/v1/snapshot;
 
@@ -797,6 +834,8 @@ curl -u 'username' https://example.com/api/v1/snapshot
 | `/api/v1/math/gcd/:a/:b` | GET | None | Greatest common divisor |
 | `/api/v1/catalan/:n` | GET | None | Catalan number calculation |
 | `/api/v1/snapshot` | GET | Basic Auth | Host/system snapshot |
+| `/school/api/tables/{table}/students/{student_code}` | GET | None | Privacy-filtered student detail |
+| `/school/api/admin/tables/{table}/students/{student_code}` | GET | Basic Auth + admin allowlist | Full student detail |
 
 ---
 
@@ -810,7 +849,8 @@ The application uses:
 - Tokio
 - Axum
 - Minimal runtime state
-- No database
+- No database for the core `/api/*` handlers
+- Read-only School SQLite access configured by `SCHOOL_DB_PATH`
 - No external application services
 
 This makes it suitable for lightweight deployments where a larger application stack would be unnecessary.
@@ -828,7 +868,7 @@ The current implementation is intentionally simple.
 - System information is collected directly from Linux files such as `/proc/loadavg` and `/proc/meminfo`.
 - Uptime is obtained through the system `uptime` command.
 - Authentication is delegated to the reverse proxy.
-- No persistent application database is used.
+- School SQLite is read-only during normal API operation; replacement uses the validated one-shot importer.
 - No application-level authentication system is implemented.
 
 ---
