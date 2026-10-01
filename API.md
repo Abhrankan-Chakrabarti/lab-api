@@ -7,7 +7,8 @@ The service is intentionally small and intentionally narrow:
 - the Rust application listens only on `127.0.0.1:8088`
 - Nginx is the public entry point over HTTPS
 - the backend is not directly exposed to the Internet
-- the public API is limited to health, application metadata, read-only mathematical calculations, and authenticated system snapshot data
+- the core `/api/*` service provides health, application metadata, read-only mathematical calculations, and an authenticated system snapshot; it does not use a database
+- the separate `/school/*` surface is a read-only SQLite API configured by `SCHOOL_DB_PATH`
 
 ## Service architecture
 
@@ -39,6 +40,8 @@ https://example.com/api/v1/math/catalan/10
 https://example.com/api/v1/math/fibonacci/10
 https://example.com/api/v1/math/gcd/84/30
 https://example.com/api/v1/snapshot
+https://example.com/school/api/tables/students/students/12345
+https://example.com/school/api/admin/tables/students/students/12345
 ```
 
 These are consumed through Nginx, which terminates TLS and forwards traffic to the backend.
@@ -53,11 +56,15 @@ http://127.0.0.1:8088/v1/math/catalan/10
 http://127.0.0.1:8088/v1/math/fibonacci/10
 http://127.0.0.1:8088/v1/math/gcd/84/30
 http://127.0.0.1:8088/v1/snapshot
+http://127.0.0.1:8088/school/api/tables/students/students/12345
+http://127.0.0.1:8088/school/api/admin/tables/students/students/12345
 ```
 
 The backend itself is only accessible from the local machine. It should not be exposed directly on a public interface or a public port.
 
 ## Endpoint summary
+
+The routes in this table are backend paths. Public clients prefix core routes with `/api`; School routes are published under `/school`.
 
 | Method | Endpoint | Auth | Purpose |
 | --- | --- | --- | --- |
@@ -68,10 +75,12 @@ The backend itself is only accessible from the local machine. It should not be e
 | GET | /v1/math/gcd/:a/:b | No | Greatest common divisor of two `u64` values |
 | GET | /v1/catalan/:n | No | Catalan number, compatibility alias, with `0 ≤ n ≤ 34` |
 | GET | /v1/snapshot | Basic Auth | Host/system snapshot |
+| GET | /school/api/tables/{table}/students/{student_code} | No | Privacy-filtered student detail |
+| GET | /school/api/admin/tables/{table}/students/{student_code} | Basic Auth + admin allowlist | Full student detail |
 
-## School Database API
+## School API
 
-The School API is read-only during normal runtime. The normal student-detail endpoint remains privacy-filtered.
+The core `/api/*` service does not use a database. The separate School API under `/school/` reads SQLite from `SCHOOL_DB_PATH` and is read-only during normal runtime. Normal student details remain privacy-filtered.
 
 ### Safe student detail
 
@@ -121,7 +130,7 @@ The API uses the standard HTTP responses implied by the handler behavior:
 | Status | Meaning |
 | --- | --- |
 | 200 OK | Successful request |
-| 400 Bad Request | Invalid Catalan input such as `n > 34` |
+| 400 Bad Request | Invalid Catalan input (`n > 34`) or Fibonacci input (`n > 186`) |
 | 401 Unauthorized | Missing or invalid HTTP Basic credentials |
 | 404 Not Found | Route not defined |
 | 500 Internal Server Error | Unexpected backend failure |
@@ -136,6 +145,7 @@ The most important contract checks are:
 - `GET /v1/catalan/:n` remains available as a compatibility alias
 - `GET /v1/catalan/:n` succeeds with `200` when `0 ≤ n ≤ 34`
 - `GET /v1/catalan/:n` fails with `400` when `n > 34`
+- `GET /v1/math/fibonacci/:n` fails with `400` when `n > 186`
 - `GET /v1/snapshot` fails with `401` without valid Basic Auth
 
 ## Math endpoints
@@ -177,6 +187,7 @@ Computes the GCD of two `u64` path values using the Euclidean algorithm. Zero is
 
 ```bash
 curl -sS 'https://example.com/api/v1/math/gcd/84/30'
+curl -sS 'https://example.com/api/v1/math/fibonacci/10'
 ```
 
 ```json
@@ -197,7 +208,8 @@ GET /v1/info
 
 This public endpoint describes the running application and its public route surface.
 It does not require authentication and must not expose hostnames, filesystem paths,
-credentials, environment variables, or system snapshot data.
+credentials, secret environment variables, or system snapshot data. The `environment`
+field is only a non-secret deployment label.
 
 ### Request examples
 
@@ -212,7 +224,7 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
 {
    "service": "lab-api",
    "api_version": "v1",
-   "app_version": "0.3.0",
+   "app_version": "0.7.0",
    "endpoints": [
       "GET /health",
       "GET /v1/info",
@@ -391,31 +403,45 @@ This is intentional. The endpoint exposes host-level information and is therefor
 
 - `GET /health` is unauthenticated
 - `GET /v1/info` is unauthenticated
+- `GET /v1/math/catalan/:n` is unauthenticated
+- `GET /v1/math/fibonacci/:n` is unauthenticated
+- `GET /v1/math/gcd/:a/:b` is unauthenticated
 - `GET /v1/catalan/:n` is unauthenticated
 - `GET /v1/snapshot` requires HTTP Basic Auth
 
 ### Auth implementation
 
-The credential check is handled by Nginx, not the Rust application.
+For `/v1/snapshot`, Nginx enforces HTTP Basic Authentication before proxying; the core Rust handler does not validate those credentials. The separate School admin endpoint also checks the forwarded `X-Authenticated-User` against `LAB_API_ADMIN_USERS` after Nginx authentication.
 
-This is the desired deployment pattern because:
-
-- the backend remains local-only
-- auth is enforced before proxying
-- the app does not need to store or validate user credentials
-- the public HTTP layer is responsible for access control
+This keeps the backend local-only while placing public Basic Auth at the HTTPS edge and School-specific authorization in the School handler.
 
 ### Example Nginx auth block
 
 ```nginx
+location = /api/v1/snapshot {
+   auth_basic "Private API";
+   auth_basic_user_file /etc/nginx/status.htpasswd;
+   proxy_pass http://127.0.0.1:8088/v1/snapshot;
+
+   proxy_http_version 1.1;
+   proxy_set_header Host $host;
+   proxy_set_header X-Real-IP $remote_addr;
+   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+   proxy_set_header X-Forwarded-Proto $scheme;
+}
+
 location /api/ {
-    auth_basic "lab-api";
-    auth_basic_user_file /etc/nginx/.htpasswd;
     proxy_pass http://127.0.0.1:8088/;
+
+   proxy_http_version 1.1;
+   proxy_set_header Host $host;
+   proxy_set_header X-Real-IP $remote_addr;
+   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+   proxy_set_header X-Forwarded-Proto $scheme;
 }
 ```
 
-This keeps the application simple while allowing Nginx to handle TLS and access control at the public edge.
+Only the exact snapshot route requires Basic Auth. Health, info, math, and the Catalan compatibility alias remain public.
 
 ## Nginx routing
 
@@ -467,7 +493,8 @@ The current security model is intentionally conservative:
 - no public TCP exposure for the Rust process
 - HTTPS termination at Nginx
 - Basic Auth for the system snapshot endpoint
-- no database
+- no database for the core `/api/*` service
+- the separate `/school/*` API reads SQLite configured by `SCHOOL_DB_PATH` and is read-only during normal runtime
 - no application-layer user management
 - no token system, no OAuth, no session handling
 
@@ -477,7 +504,7 @@ This is a small service with a minimal security boundary. The trust boundary is:
 Internet -> HTTPS + Nginx -> local lab-api process -> Linux host
 ```
 
-The system snapshot endpoint is the only route with protected access. The health, information, and Catalan endpoints are intentionally public and informational.
+The system snapshot endpoint is the only protected route in the core `/api/*` service. Health, info, all math routes, and the Catalan alias are public. The School admin detail endpoint has its own Basic Auth and allowlist requirements described above.
 
 ## systemd deployment
 
@@ -518,6 +545,8 @@ curl -sS https://example.com/api/health
 
 ```bash
 curl -sS 'https://example.com/api/v1/catalan/10'
+curl -sS 'https://example.com/api/v1/math/fibonacci/10'
+curl -sS 'https://example.com/api/v1/math/gcd/84/30'
 ```
 
 ### Snapshot with auth
@@ -550,7 +579,7 @@ curl -sS -u 'username:password' http://127.0.0.1:8088/v1/snapshot
 
 - This API is intentionally small and stable.
 - No additional endpoints should be added without a matching documentation update.
-- The current contract is intentionally deliberate: a health check, public application metadata, a numeric calculation endpoint, and an authenticated snapshot endpoint.
+- The current contract is intentionally deliberate: health, public application metadata, math routes, an authenticated snapshot, and the separate read-only School API under `/school/`.
 - If the service is extended later, the contract should be updated in this document first.
 
 This is the current canonical API contract for the service.
