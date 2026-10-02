@@ -11,7 +11,7 @@ RestartSec=3s
 
 # Application environment
 Environment="SCHOOL_DB_PATH=/var/lib/lab-api/School.db"
-Environment="SCHOOL_AUDIT_DB_PATH=/var/lib/lab-api/school-audit.db"
+Environment="SCHOOL_AUDIT_DB_PATH=/var/lib/lab-api/audit/school-audit.db"
 # Comma-separated usernames allowed to access the full School student-detail API.
 Environment="LAB_API_ADMIN_USERS=schooladmin"
 # Optional non-secret deployment label for /v1/info:
@@ -25,9 +25,10 @@ PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
 
-# Student database: read-only. Audit database: writable.
+# Student DB file: read-only. Audit lives in a writable subdirectory
+# so SQLite can create journal/WAL files next to school-audit.db.
 ReadOnlyPaths=/var/lib/lab-api/School.db
-ReadWritePaths=/var/lib/lab-api/school-audit.db
+ReadWritePaths=/var/lib/lab-api/audit
 
 # Network
 RestrictAddressFamilies=AF_INET AF_INET6
