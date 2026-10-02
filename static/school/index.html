@@ -147,6 +147,30 @@
                 margin: 0;
             }
 
+            .view-toggle {
+                display: flex;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
+            }
+
+            .view-toggle button {
+                background: var(--card);
+                border: 1px solid var(--bd);
+                color: var(--text);
+                padding: 0.4rem 0.7rem;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+
+            .view-toggle button:hover {
+                border-color: var(--link);
+            }
+
+            .view-toggle button.active {
+                border-color: var(--link);
+                color: #fff;
+            }
+
             .admin-badge,
             .privacy-badge {
                 display: inline-block;

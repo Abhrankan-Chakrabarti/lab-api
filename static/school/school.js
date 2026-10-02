@@ -168,7 +168,7 @@ async function loadPage() {
     }
 }
 
-async function loadStudent(studentId) {
+async function loadStudent(studentId, view = "auto") {
     if (!state.table) return;
 
     const table = encodeURIComponent(state.table);
@@ -178,29 +178,51 @@ async function loadStudent(studentId) {
         let data;
         let isAdmin = false;
 
-        try {
+        if (view === "admin") {
+            // Deliberate request for the full record -- no fallback. A
+            // genuinely non-admin user gets a real 403 here, which is
+            // correct: they explicitly asked for the admin view.
             data = await api(
                 `/school/api/admin/tables/${table}/students/${student}`
             );
             isAdmin = true;
-        } catch (error) {
-            if (error.status !== 403) {
-                throw error;
-            }
-
+        } else if (view === "privacy") {
+            // Deliberate request for the privacy-filtered view. This is
+            // the toggle schooladmin needs -- without it, the admin
+            // endpoint always succeeds for them and the filtered branch
+            // below is never reached.
             data = await api(
                 `/school/api/tables/${table}/students/${student}`
             );
+        } else {
+            // Initial load (row click): try admin first, fall back to
+            // the privacy-filtered endpoint on 403. Unchanged from
+            // before -- this is what makes the view "just work" before
+            // we know whether the current user is an admin.
+            try {
+                data = await api(
+                    `/school/api/admin/tables/${table}/students/${student}`
+                );
+                isAdmin = true;
+            } catch (error) {
+                if (error.status !== 403) {
+                    throw error;
+                }
+
+                data = await api(
+                    `/school/api/tables/${table}/students/${student}`
+                );
+            }
         }
 
-        renderStudent(data, isAdmin);
+        renderStudent(data, isAdmin, studentId);
     } catch (error) {
         document.getElementById("out").innerHTML =
             `<p class="err">${esc(error.message)}</p>`;
     }
 }
 
-function renderStudent(data, isAdmin = false) {
+function renderStudent(data, isAdmin = false, studentId = null) {
     const student = data.student;
     const accessBadge = isAdmin
         ? '<span class="admin-badge">Admin · full record</span>'
@@ -214,6 +236,10 @@ function renderStudent(data, isAdmin = false) {
           <h2>Student Details</h2>
           ${accessBadge}
         </div>
+      </div>
+      <div class="view-toggle">
+        <button type="button" id="view-admin" class="${isAdmin ? "active" : ""}">Full Record</button>
+        <button type="button" id="view-privacy" class="${isAdmin ? "" : "active"}">Privacy View</button>
       </div>
       <dl>
   `;
@@ -232,14 +258,22 @@ function renderStudent(data, isAdmin = false) {
 
     document.getElementById("out").innerHTML = html;
 
-    const studentId =
+    const displayId =
         state.primaryKey != null ? student[state.primaryKey] : "";
 
     document.getElementById("meta").textContent =
-        `${data.table} · Student ${studentId ?? ""}`;
+        `${data.table} · Student ${displayId ?? ""}`;
 
     document.getElementById("back-to-table").onclick = () => {
         loadPage();
+    };
+
+    document.getElementById("view-admin").onclick = () => {
+        loadStudent(studentId, "admin");
+    };
+
+    document.getElementById("view-privacy").onclick = () => {
+        loadStudent(studentId, "privacy");
     };
 }
 
