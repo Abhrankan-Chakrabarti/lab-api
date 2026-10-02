@@ -1,3 +1,12 @@
+# lab-api v0.7.1
+
+## Added
+
+- Added a School student-view toggle for switching between privacy-filtered details and admin full details when authorized.
+- Kept full student records behind the existing Nginx Basic Auth and `LAB_API_ADMIN_USERS` authorization boundary.
+
+---
+
 # lab-api v0.7.0
 
 ## Added

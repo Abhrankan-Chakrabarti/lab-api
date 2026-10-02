@@ -224,7 +224,7 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
 {
    "service": "lab-api",
    "api_version": "v1",
-   "app_version": "0.7.0",
+   "app_version": "0.7.1",
    "endpoints": [
       "GET /health",
       "GET /v1/info",

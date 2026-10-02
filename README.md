@@ -62,7 +62,7 @@ Nginx provides the public HTTPS interface and forwards requests to the local app
 
 For the canonical API contract, see [`API.md`](API.md).
 
-For the `v0.7.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
+For the `v0.7.1` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
 
 This README focuses on the public core `/api/*` surface. The separate School module is summarized below; see [`API.md`](API.md) and [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for its routes, privacy boundary, admin authorization, and importer history.
 
