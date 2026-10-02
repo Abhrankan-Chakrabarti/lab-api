@@ -5,18 +5,18 @@ After=network.target
 [Service]
 Type=simple
 User=ec2-user
-
 ExecStart=/usr/local/bin/lab-api
-
 Restart=on-failure
 RestartSec=3s
 
 # Application environment
 Environment="SCHOOL_DB_PATH=/var/lib/lab-api/School.db"
+Environment="SCHOOL_AUDIT_DB_PATH=/var/lib/lab-api/school-audit.db"
 # Comma-separated usernames allowed to access the full School student-detail API.
 Environment="LAB_API_ADMIN_USERS=schooladmin"
+# Optional non-secret deployment label for /v1/info:
+# Environment="LAB_API_ENV=production"
 
-# Working directory for relative application assets
 WorkingDirectory=/opt/lab-api
 
 # Security hardening
@@ -25,9 +25,9 @@ PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
 
-# Allow the application to read the School database,
-# but prevent it from writing to the database directory.
-ReadOnlyPaths=/var/lib/lab-api
+# Student database: read-only. Audit database: writable.
+ReadOnlyPaths=/var/lib/lab-api/School.db
+ReadWritePaths=/var/lib/lab-api/school-audit.db
 
 # Network
 RestrictAddressFamilies=AF_INET AF_INET6

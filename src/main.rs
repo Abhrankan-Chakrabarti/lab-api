@@ -8,6 +8,7 @@ use tower_http::services::ServeDir;
 mod school;
 
 use school::api::{router as school_router, SchoolState};
+use school::audit::SchoolAuditLog;
 use school::db::SchoolDb;
 use school::import::import_database;
 
@@ -261,12 +262,37 @@ fn school_routes() -> Router {
         Ok(db) => {
             eprintln!("school database: {database_path}");
 
-            school_router(SchoolState::new(db))
+            school_router(SchoolState::new(db, school_audit_log()))
         }
 
         Err(error) => {
             eprintln!("school database disabled: {error}");
             Router::new()
+        }
+    }
+}
+
+fn school_audit_log() -> Option<SchoolAuditLog> {
+    let audit_path = match std::env::var("SCHOOL_AUDIT_DB_PATH") {
+        Ok(path) if !path.trim().is_empty() => path,
+        Ok(_) => {
+            eprintln!("SCHOOL_AUDIT_DB_PATH is empty; admin student detail is disabled");
+            return None;
+        }
+        Err(_) => {
+            eprintln!("SCHOOL_AUDIT_DB_PATH not set; admin student detail is disabled");
+            return None;
+        }
+    };
+
+    match SchoolAuditLog::open(&audit_path) {
+        Ok(audit_log) => {
+            eprintln!("school audit database: {audit_path}");
+            Some(audit_log)
+        }
+        Err(error) => {
+            eprintln!("school audit logging unavailable: {error}");
+            None
         }
     }
 }
