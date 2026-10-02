@@ -279,7 +279,9 @@ with:
 
 The School API is a separate read-only SQLite surface under `/school/`; it is not part of the database-free core `/api/*` service. The active database path is configured with `SCHOOL_DB_PATH` and is opened read-only during normal operation.
 
-- `GET /school/api/tables/{table}/students/{student_code}` returns privacy-filtered student details.
+In production, **the entire `/school/` location is protected by Nginx Basic Auth**. The backend does not re-implement that gate; admin routes add an allowlist on top of it.
+
+- `GET /school/api/tables/{table}/students/{student_code}` returns privacy-filtered student details (Nginx Basic Auth).
 - `GET /school/api/admin/tables/{table}/students/{student_code}` returns full schema details only when Nginx Basic Auth succeeds and `X-Authenticated-User` names a user in `LAB_API_ADMIN_USERS`.
 - A validated one-shot importer can replace the School database after checking the candidate file; normal API requests do not write to it.
 
@@ -335,22 +337,18 @@ Test-only dependencies:
 
 Contains:
 
-- API routes
+- Core `/api/*` route wiring
 - Health endpoint
 - Application information endpoint
 - System snapshot collection
-- Catalan number calculation
-- Fibonacci calculation
-- GCD calculation
+- Catalan, Fibonacci, and GCD calculation
 - Backward-compatible Catalan route
-- School API handlers and SQLite access
-- Validated School database importer
-- School admin allowlist authorization
-- Unit and HTTP router tests
-- JSON response structures
-- Local TCP listener
-- Axum server initialization
-- School API mounting and `lab-api import` command dispatch
+- Mounts the School API router from `src/school/`
+- `lab-api import` command dispatch for the School database importer
+- Unit and HTTP router tests for the core API
+- Local TCP listener and Axum server initialization
+
+School handlers, SQLite access, privacy filtering, and admin allowlist logic live under `src/school/`.
 
 ### `API.md`
 
@@ -643,7 +641,7 @@ For the sensitive snapshot endpoint, Basic Authentication can be applied specifi
 ```nginx
 location = /api/v1/snapshot {
     auth_basic "Private API";
-  auth_basic_user_file /etc/nginx/status.htpasswd;
+    auth_basic_user_file /etc/nginx/status.htpasswd;
 
     proxy_pass http://127.0.0.1:8088/v1/snapshot;
 
@@ -653,6 +651,22 @@ location = /api/v1/snapshot {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+School UI and API should remain behind Basic Auth for the whole prefix, with the authenticated username forwarded for admin checks:
+
+```nginx
+location /school/ {
+    auth_basic "School Database";
+    auth_basic_user_file /etc/nginx/school.htpasswd;
+
+    proxy_pass http://127.0.0.1:8088;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Authenticated-User $remote_user;
 }
 ```
 
@@ -693,9 +707,13 @@ Internet
    ▼
  Nginx
    │
-   ├── Public endpoints
+   ├── Public /api endpoints (health, info, math)
    │
-   └── Basic Authentication
+   ├── Basic Authentication → /api/v1/snapshot
+   │
+   └── Basic Authentication → /school/*
+          │
+          └── admin allowlist for full student detail
           │
           ▼
       lab-api
@@ -708,10 +726,11 @@ Nginx is responsible for:
 
 - TLS termination
 - Public routing
-- Authentication for protected endpoints
+- Authentication for protected endpoints (`/api/v1/snapshot`, `/school/`)
 - Forwarding requests to the local service
+- Setting `X-Authenticated-User` from `$remote_user` for School admin authorization
 
-The `/v1/snapshot` endpoint should remain protected when exposed through a public reverse proxy because it reveals information about the underlying host.
+The `/v1/snapshot` endpoint should remain protected when exposed through a public reverse proxy because it reveals information about the underlying host. The `/school/` tree should remain protected because it exposes student records.
 
 ---
 
@@ -832,10 +851,12 @@ curl -u 'username' https://example.com/api/v1/snapshot
 | `/api/v1/math/catalan/:n` | GET | None | Catalan number calculation |
 | `/api/v1/math/fibonacci/:n` | GET | None | Fibonacci number calculation |
 | `/api/v1/math/gcd/:a/:b` | GET | None | Greatest common divisor |
-| `/api/v1/catalan/:n` | GET | None | Catalan number calculation |
-| `/api/v1/snapshot` | GET | Basic Auth | Host/system snapshot |
-| `/school/api/tables/{table}/students/{student_code}` | GET | None | Privacy-filtered student detail |
-| `/school/api/admin/tables/{table}/students/{student_code}` | GET | Basic Auth + admin allowlist | Full student detail |
+| `/api/v1/catalan/:n` | GET | None | Catalan number calculation (alias) |
+| `/api/v1/snapshot` | GET | Nginx Basic Auth | Host/system snapshot |
+| `/school/api/tables/{table}/students/{student_code}` | GET | Nginx Basic Auth | Privacy-filtered student detail |
+| `/school/api/admin/tables/{table}/students/{student_code}` | GET | Nginx Basic Auth + admin allowlist | Full student detail |
+
+Paths above are the public URL shapes when Nginx strips or prefixes as in the examples. Backend listen paths omit the `/api` prefix for core routes.
 
 ---
 
@@ -867,9 +888,9 @@ The current implementation is intentionally simple.
 - The snapshot endpoint is Linux-oriented.
 - System information is collected directly from Linux files such as `/proc/loadavg` and `/proc/meminfo`.
 - Uptime is obtained through the system `uptime` command.
-- Authentication is delegated to the reverse proxy.
+- Authentication is delegated to the reverse proxy (plus an admin allowlist for full School detail).
 - School SQLite is read-only during normal API operation; replacement uses the validated one-shot importer.
-- No application-level authentication system is implemented.
+- No general application-level user management system is implemented.
 
 ---
 
