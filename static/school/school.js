@@ -182,7 +182,11 @@ async function loadPage() {
         updatePagination(data);
     } catch (error) {
         if (requestId !== state.requestId) return;
-        setTableControlsEnabled(false);
+        // Keep controls usable so the user can retry or change search.
+        setTableControlsEnabled(true);
+        document.getElementById("meta").textContent = state.table
+            ? `${state.table} · error`
+            : "";
         document.getElementById("out").innerHTML =
             `<p class="err">${esc(error.message)}</p>`;
     }
@@ -235,6 +239,12 @@ async function loadStudent(studentId, view = "auto") {
             msg =
                 "Admin detail is unavailable (audit logging not configured).";
         }
+        // Recover so the user is not stuck with all controls disabled.
+        state.view = "table";
+        setTableControlsEnabled(true);
+        document.getElementById("meta").textContent = state.table
+            ? `${state.table} · error`
+            : "";
         document.getElementById("out").innerHTML =
             `<p class="err">${esc(msg)}</p>`;
     }
@@ -259,6 +269,9 @@ async function loadAuditLog(offset = 0) {
         } else if (error.status === 503) {
             msg = "Audit logging is unavailable on the server.";
         }
+        // Recover so the user is not stuck with all controls disabled.
+        state.view = "table";
+        setTableControlsEnabled(true);
         document.getElementById("meta").textContent = "";
         document.getElementById("out").innerHTML =
             `<p class="err">${esc(msg)}</p>`;
