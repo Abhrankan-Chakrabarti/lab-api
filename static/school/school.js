@@ -6,13 +6,14 @@ const state = {
     searchTimer: null,
     requestId: 0,
     auditOffset: 0,
+    view: "table", // "table" | "student" | "audit"
 };
 
 const AUDIT_PAGE_SIZE = 50;
 
 async function api(path) {
     const r = await fetch(path, {
-        credentials: "same-origin"
+        credentials: "same-origin",
     });
 
     if (!r.ok) {
@@ -32,8 +33,36 @@ function esc(s) {
             ">": "&gt;",
             '"': "&quot;",
             "'": "&#39;",
-        })[c]
+        })[c],
     );
+}
+
+function setTableControlsEnabled(enabled) {
+    const search = document.getElementById("q");
+    const prev = document.getElementById("prev");
+    const next = document.getElementById("next");
+
+    // Search stays disabled until a class table is selected.
+    search.disabled = !enabled || !state.table;
+    prev.disabled = !enabled;
+    next.disabled = !enabled;
+}
+
+async function probeAdminAuditAccess() {
+    const link = document.getElementById("audit-log-link");
+    try {
+        const r = await fetch("/school/api/admin/audit?limit=1&offset=0", {
+            credentials: "same-origin",
+        });
+        if (r.status === 403 || r.status === 401) {
+            link.hidden = true;
+            return;
+        }
+        // 200, 503, etc. — show the button; loadAuditLog handles errors
+        link.hidden = false;
+    } catch {
+        link.hidden = true;
+    }
 }
 
 async function loadTables() {
@@ -44,10 +73,8 @@ async function loadTables() {
 
     data.tables.forEach((t) => {
         const b = document.createElement("button");
-
         b.textContent = t.replaceAll("_", "-");
         b.onclick = () => selectTable(t, b);
-
         el.appendChild(b);
     });
 }
@@ -56,21 +83,18 @@ async function selectTable(table, btn) {
     state.table = table;
     state.primaryKey = null;
     state.offset = 0;
+    state.view = "table";
 
     document
         .querySelectorAll(".classes button")
         .forEach((b) => b.classList.remove("active"));
-
     btn.classList.add("active");
 
-    document.getElementById("q").disabled = false;
-
     const schema = await api(
-        `/school/api/tables/${encodeURIComponent(table)}/schema`
+        `/school/api/tables/${encodeURIComponent(table)}/schema`,
     );
 
     const primaryKeys = schema.columns.filter((column) => column.pk);
-
     if (primaryKeys.length === 1) {
         state.primaryKey = primaryKeys[0].name;
     }
@@ -80,6 +104,9 @@ async function selectTable(table, btn) {
 
 async function loadPage() {
     if (!state.table) return;
+
+    state.view = "table";
+    setTableControlsEnabled(true);
 
     const requestId = ++state.requestId;
     const q = document.getElementById("q").value.trim();
@@ -95,10 +122,9 @@ async function loadPage() {
 
     try {
         const data = await api(
-            `/school/api/tables/${encodeURIComponent(state.table)}?${params}`
+            `/school/api/tables/${encodeURIComponent(state.table)}?${params}`,
         );
 
-        // Ignore an older response if a newer request has already started.
         if (requestId !== state.requestId) return;
 
         document.getElementById("meta").textContent =
@@ -113,7 +139,6 @@ async function loadPage() {
         ];
 
         let cols = prefer.filter((c) => data.columns.includes(c));
-
         if (cols.length === 0) {
             cols = data.columns.slice(0, 5);
         }
@@ -130,31 +155,23 @@ async function loadPage() {
             for (const row of data.rows) {
                 const studentId =
                     state.primaryKey != null ? row[state.primaryKey] : null;
-
                 const rowClass = studentId != null ? "student-row" : "";
-
                 const dataAttribute =
-                    studentId != null ?
-                    ` data-student-id="${esc(studentId)}"` :
-                    "";
+                    studentId != null
+                        ? ` data-student-id="${esc(studentId)}"`
+                        : "";
 
                 html += `<tr class="${rowClass}"${dataAttribute}>`;
-
-                html += cols
-                    .map((c) => `<td>${esc(row[c])}</td>`)
-                    .join("");
-
+                html += cols.map((c) => `<td>${esc(row[c])}</td>`).join("");
                 html += "</tr>";
             }
 
             html += "</tbody></table>";
-
             document.getElementById("out").innerHTML = html;
 
             document.querySelectorAll(".student-row").forEach((row) => {
                 row.addEventListener("click", () => {
                     const studentId = row.dataset.studentId;
-
                     if (studentId) {
                         loadStudent(studentId);
                     }
@@ -165,7 +182,7 @@ async function loadPage() {
         updatePagination(data);
     } catch (error) {
         if (requestId !== state.requestId) return;
-
+        setTableControlsEnabled(false);
         document.getElementById("out").innerHTML =
             `<p class="err">${esc(error.message)}</p>`;
     }
@@ -173,6 +190,9 @@ async function loadPage() {
 
 async function loadStudent(studentId, view = "auto") {
     if (!state.table) return;
+
+    state.view = "student";
+    setTableControlsEnabled(false);
 
     const table = encodeURIComponent(state.table);
     const student = encodeURIComponent(studentId);
@@ -182,68 +202,76 @@ async function loadStudent(studentId, view = "auto") {
         let isAdmin = false;
 
         if (view === "admin") {
-            // Deliberate request for the full record -- no fallback. A
-            // genuinely non-admin user gets a real 403 here, which is
-            // correct: they explicitly asked for the admin view.
             data = await api(
-                `/school/api/admin/tables/${table}/students/${student}`
+                `/school/api/admin/tables/${table}/students/${student}`,
             );
             isAdmin = true;
         } else if (view === "privacy") {
-            // Deliberate request for the privacy-filtered view. This is
-            // the toggle schooladmin needs -- without it, the admin
-            // endpoint always succeeds for them and the filtered branch
-            // below is never reached.
             data = await api(
-                `/school/api/tables/${table}/students/${student}`
+                `/school/api/tables/${table}/students/${student}`,
             );
         } else {
-            // Initial load (row click): try admin first, fall back to
-            // the privacy-filtered endpoint on 403. Unchanged from
-            // before -- this is what makes the view "just work" before
-            // we know whether the current user is an admin.
             try {
                 data = await api(
-                    `/school/api/admin/tables/${table}/students/${student}`
+                    `/school/api/admin/tables/${table}/students/${student}`,
                 );
                 isAdmin = true;
             } catch (error) {
                 if (error.status !== 403) {
                     throw error;
                 }
-
                 data = await api(
-                    `/school/api/tables/${table}/students/${student}`
+                    `/school/api/tables/${table}/students/${student}`,
                 );
             }
         }
 
         renderStudent(data, isAdmin, studentId);
     } catch (error) {
+        let msg = error.message;
+        if (error.status === 403) {
+            msg = "Admin access required for the full record.";
+        } else if (error.status === 503) {
+            msg =
+                "Admin detail is unavailable (audit logging not configured).";
+        }
         document.getElementById("out").innerHTML =
-            `<p class="err">${esc(error.message)}</p>`;
+            `<p class="err">${esc(msg)}</p>`;
     }
 }
 
 async function loadAuditLog(offset = 0) {
     state.auditOffset = offset;
+    state.view = "audit";
+    setTableControlsEnabled(false);
 
     try {
         const data = await api(
-            `/school/api/admin/audit?limit=${AUDIT_PAGE_SIZE}&offset=${offset}`
+            `/school/api/admin/audit?limit=${AUDIT_PAGE_SIZE}&offset=${offset}`,
         );
-
         renderAuditLog(data);
     } catch (error) {
+        let msg = error.message;
+        if (error.status === 403) {
+            msg = "Admin access required to view the audit log.";
+        } else if (error.status === 401) {
+            msg = "Authentication required.";
+        } else if (error.status === 503) {
+            msg = "Audit logging is unavailable on the server.";
+        }
+        document.getElementById("meta").textContent = "";
         document.getElementById("out").innerHTML =
-            `<p class="err">${esc(error.message)}</p>`;
+            `<p class="err">${esc(msg)}</p>`;
     }
-
-    document.getElementById("meta").textContent = "";
 }
 
 function renderAuditLog(data) {
-    const events = data.events;
+    const events = data.events || [];
+    const limit = data.limit ?? AUDIT_PAGE_SIZE;
+    const offset = data.offset ?? 0;
+
+    document.getElementById("meta").textContent =
+        `Audit log · ${events.length} event(s) on this page · offset ${offset} · limit ${limit}`;
 
     let html = `
     <div class="audit-header">
@@ -253,7 +281,9 @@ function renderAuditLog(data) {
   `;
 
     if (events.length === 0) {
-        html += `<p class="err">No audit events${state.auditOffset > 0 ? " on this page" : " yet"}.</p>`;
+        html += `<p class="err">No audit events${
+            offset > 0 ? " on this page" : " yet"
+        }.</p>`;
     } else {
         html += `
       <table>
@@ -286,8 +316,12 @@ function renderAuditLog(data) {
 
     html += `
     <div class="audit-pager">
-      <button type="button" id="audit-prev" ${data.offset <= 0 ? "disabled" : ""}>Prev</button>
-      <button type="button" id="audit-next" ${events.length < data.limit ? "disabled" : ""}>Next</button>
+      <button type="button" id="audit-prev" ${
+          offset <= 0 ? "disabled" : ""
+      }>Prev</button>
+      <button type="button" id="audit-next" ${
+          events.length < limit ? "disabled" : ""
+      }>Next</button>
     </div>
   `;
 
@@ -297,16 +331,19 @@ function renderAuditLog(data) {
         if (state.table) {
             loadPage();
         } else {
+            state.view = "table";
+            document.getElementById("meta").textContent = "";
             document.getElementById("out").innerHTML = "";
+            setTableControlsEnabled(false);
         }
     };
 
     document.getElementById("audit-prev").onclick = () => {
-        loadAuditLog(Math.max(0, data.offset - data.limit));
+        loadAuditLog(Math.max(0, offset - limit));
     };
 
     document.getElementById("audit-next").onclick = () => {
-        loadAuditLog(data.offset + data.limit);
+        loadAuditLog(offset + limit);
     };
 }
 
@@ -326,8 +363,12 @@ function renderStudent(data, isAdmin = false, studentId = null) {
         </div>
       </div>
       <div class="view-toggle">
-        <button type="button" id="view-admin" class="${isAdmin ? "active" : ""}">Full Record</button>
-        <button type="button" id="view-privacy" class="${isAdmin ? "" : "active"}">Privacy View</button>
+        <button type="button" id="view-admin" class="${
+            isAdmin ? "active" : ""
+        }">Full Record</button>
+        <button type="button" id="view-privacy" class="${
+            isAdmin ? "" : "active"
+        }">Privacy View</button>
       </div>
       <dl>
   `;
@@ -368,17 +409,18 @@ function renderStudent(data, isAdmin = false, studentId = null) {
 function updatePagination(data) {
     const prev = document.getElementById("prev");
     const next = document.getElementById("next");
-
     prev.disabled = data.offset <= 0;
     next.disabled = data.offset + data.returned >= data.total;
 }
 
 document.getElementById("prev").onclick = () => {
+    if (state.view !== "table") return;
     state.offset = Math.max(0, state.offset - state.limit);
     loadPage();
 };
 
 document.getElementById("next").onclick = () => {
+    if (state.view !== "table") return;
     state.offset += state.limit;
     loadPage();
 };
@@ -389,14 +431,14 @@ document.getElementById("audit-log-link").onclick = () => {
 
 document.getElementById("q").addEventListener("input", () => {
     clearTimeout(state.searchTimer);
-
     state.searchTimer = setTimeout(() => {
+        if (state.view !== "table") return;
         state.offset = 0;
         loadPage();
     }, 300);
 });
 
-loadTables().catch((e) => {
+Promise.all([loadTables(), probeAdminAuditAccess()]).catch((e) => {
     document.getElementById("out").innerHTML =
         `<p class="err">${esc(e.message)}</p>`;
 });

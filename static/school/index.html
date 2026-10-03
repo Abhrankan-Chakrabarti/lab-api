@@ -68,12 +68,19 @@
                 justify-content: space-between;
                 align-items: center;
                 margin-bottom: 1rem;
+                gap: 1rem;
+            }
+
+            .audit-header h2 {
+                font-size: 1.15rem;
+                margin: 0;
             }
 
             .audit-pager {
                 display: flex;
                 gap: 0.5rem;
                 margin-top: 1rem;
+                align-items: center;
             }
 
             .audit-pager button {
@@ -83,6 +90,10 @@
                 padding: 0.4rem 0.7rem;
                 border-radius: 6px;
                 cursor: pointer;
+            }
+
+            .audit-pager button:hover:not(:disabled) {
+                border-color: var(--link);
             }
 
             .audit-pager button:disabled {
@@ -289,15 +300,21 @@
                 table {
                     font-size: 0.82rem;
                 }
+
+                .toolbar {
+                    flex-direction: column;
+                }
             }
         </style>
     </head>
     <body>
         <h1>School Database</h1>
-        <p class="sub">Read-only student portal <span class="lock">🔒 auth required</span></p>
+        <p class="sub">
+            Read-only student portal <span class="lock">🔒 auth required</span>
+        </p>
         <div class="toolbar">
             <div id="classes" class="classes"></div>
-            <button type="button" id="audit-log-link">Audit Log</button>
+            <button type="button" id="audit-log-link" hidden>Audit Log</button>
         </div>
         <input type="search" id="q" placeholder="Search students..." disabled />
         <div id="meta" class="sub"></div>
