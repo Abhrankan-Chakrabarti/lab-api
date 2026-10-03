@@ -10,11 +10,37 @@ const state = {
 };
 
 const AUDIT_PAGE_SIZE = 50;
+const AUTH_KEY = "schoolBasicAuth";
+
+function authHeaders() {
+    const token = sessionStorage.getItem(AUTH_KEY);
+    return token ? { Authorization: "Basic " + token } : {};
+}
+
+function requireAuthOrRedirect() {
+    if (!sessionStorage.getItem(AUTH_KEY)) {
+        location.replace("/school/login.html");
+        return false;
+    }
+    return true;
+}
+
+function logout() {
+    sessionStorage.removeItem(AUTH_KEY);
+    location.replace("/school/login.html");
+}
 
 async function api(path) {
     const r = await fetch(path, {
         credentials: "same-origin",
+        headers: { ...authHeaders() },
     });
+
+    if (r.status === 401) {
+        sessionStorage.removeItem(AUTH_KEY);
+        location.replace("/school/login.html");
+        throw Object.assign(new Error("401 unauthorized"), { status: 401 });
+    }
 
     if (!r.ok) {
         const error = new Error(`${r.status} ${await r.text()}`);
@@ -42,7 +68,6 @@ function setTableControlsEnabled(enabled) {
     const prev = document.getElementById("prev");
     const next = document.getElementById("next");
 
-    // Search stays disabled until a class table is selected.
     search.disabled = !enabled || !state.table;
     prev.disabled = !enabled;
     next.disabled = !enabled;
@@ -53,12 +78,12 @@ async function probeAdminAuditAccess() {
     try {
         const r = await fetch("/school/api/admin/audit?limit=1&offset=0", {
             credentials: "same-origin",
+            headers: { ...authHeaders() },
         });
         if (r.status === 403 || r.status === 401) {
             link.hidden = true;
             return;
         }
-        // 200, 503, etc. — show the button; loadAuditLog handles errors
         link.hidden = false;
     } catch {
         link.hidden = true;
@@ -182,7 +207,6 @@ async function loadPage() {
         updatePagination(data);
     } catch (error) {
         if (requestId !== state.requestId) return;
-        // Keep controls usable so the user can retry or change search.
         setTableControlsEnabled(true);
         document.getElementById("meta").textContent = state.table
             ? `${state.table} · error`
@@ -239,7 +263,6 @@ async function loadStudent(studentId, view = "auto") {
             msg =
                 "Admin detail is unavailable (audit logging not configured).";
         }
-        // Recover so the user is not stuck with all controls disabled.
         state.view = "table";
         setTableControlsEnabled(true);
         document.getElementById("meta").textContent = state.table
@@ -269,7 +292,6 @@ async function loadAuditLog(offset = 0) {
         } else if (error.status === 503) {
             msg = "Audit logging is unavailable on the server.";
         }
-        // Recover so the user is not stuck with all controls disabled.
         state.view = "table";
         setTableControlsEnabled(true);
         document.getElementById("meta").textContent = "";
@@ -442,6 +464,8 @@ document.getElementById("audit-log-link").onclick = () => {
     loadAuditLog(0);
 };
 
+document.getElementById("logout-btn").onclick = () => logout();
+
 document.getElementById("q").addEventListener("input", () => {
     clearTimeout(state.searchTimer);
     state.searchTimer = setTimeout(() => {
@@ -451,7 +475,11 @@ document.getElementById("q").addEventListener("input", () => {
     }, 300);
 });
 
-Promise.all([loadTables(), probeAdminAuditAccess()]).catch((e) => {
-    document.getElementById("out").innerHTML =
-        `<p class="err">${esc(e.message)}</p>`;
-});
+if (!requireAuthOrRedirect()) {
+    /* redirected to login */
+} else {
+    Promise.all([loadTables(), probeAdminAuditAccess()]).catch((e) => {
+        document.getElementById("out").innerHTML =
+            `<p class="err">${esc(e.message)}</p>`;
+    });
+}

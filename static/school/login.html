@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#0d1117" />
+  <title>School login</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --text: #c9d1d9;
+      --dim: #8b949e;
+      --bd: #30363d;
+      --link: #58a6ff;
+      --bad: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    .card {
+      width: 100%;
+      max-width: 360px;
+      background: var(--card);
+      border: 1px solid var(--bd);
+      border-radius: 8px;
+      padding: 1.5rem;
+    }
+    h1 { font-size: 1.2rem; margin: 0 0 0.25rem; }
+    .sub { color: var(--dim); font-size: 0.9rem; margin: 0 0 1.25rem; }
+    label { display: block; font-size: 0.85rem; color: var(--dim); margin-bottom: 0.35rem; }
+    input {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      margin-bottom: 0.9rem;
+      border-radius: 6px;
+      border: 1px solid var(--bd);
+      background: var(--bg);
+      color: var(--text);
+    }
+    input:focus { outline: none; border-color: var(--link); }
+    button {
+      width: 100%;
+      padding: 0.55rem;
+      border-radius: 6px;
+      border: 1px solid var(--bd);
+      background: #21262d;
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { border-color: var(--link); }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .err { color: var(--bad); font-size: 0.9rem; margin: 0 0 0.75rem; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>School Database</h1>
+    <p class="sub">Staff sign-in. Credentials are sent only to this site over HTTPS.</p>
+    <p class="err" id="err"></p>
+    <form id="form" autocomplete="on">
+      <label for="user">Username</label>
+      <input id="user" name="username" autocomplete="username" required />
+      <label for="pass">Password</label>
+      <input id="pass" name="password" type="password" autocomplete="current-password" required />
+      <button type="submit" id="btn">Sign in</button>
+    </form>
+  </div>
+  <script>
+    const KEY = "schoolBasicAuth";
+    const err = document.getElementById("err");
+    const btn = document.getElementById("btn");
+
+    if (sessionStorage.getItem(KEY)) {
+      location.replace("/school/");
+    }
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      err.textContent = "";
+      btn.disabled = true;
+      const user = document.getElementById("user").value.trim();
+      const pass = document.getElementById("pass").value;
+      const token = btoa(unescape(encodeURIComponent(user + ":" + pass)));
+      try {
+        const r = await fetch("/school/api/tables", {
+          headers: { Authorization: "Basic " + token },
+        });
+        if (r.status === 401 || r.status === 403) {
+          err.textContent = "Invalid username or password.";
+          btn.disabled = false;
+          return;
+        }
+        if (!r.ok) {
+          err.textContent = "Sign-in failed (" + r.status + ").";
+          btn.disabled = false;
+          return;
+        }
+        sessionStorage.setItem(KEY, token);
+        location.replace("/school/");
+      } catch {
+        err.textContent = "Network error.";
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
