@@ -39,7 +39,55 @@
                 display: flex;
                 flex-wrap: wrap;
                 gap: 0.5rem;
+            }
+
+            .toolbar {
+                display: flex;
+                justify-content: space-between;
+                align-items: flex-start;
+                gap: 1rem;
                 margin-bottom: 1rem;
+            }
+
+            #audit-log-link {
+                background: var(--card);
+                border: 1px solid var(--bd);
+                color: var(--text);
+                padding: 0.4rem 0.7rem;
+                border-radius: 6px;
+                cursor: pointer;
+                white-space: nowrap;
+            }
+
+            #audit-log-link:hover {
+                border-color: var(--link);
+            }
+
+            .audit-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 1rem;
+            }
+
+            .audit-pager {
+                display: flex;
+                gap: 0.5rem;
+                margin-top: 1rem;
+            }
+
+            .audit-pager button {
+                background: var(--card);
+                border: 1px solid var(--bd);
+                color: var(--text);
+                padding: 0.4rem 0.7rem;
+                border-radius: 6px;
+                cursor: pointer;
+            }
+
+            .audit-pager button:disabled {
+                opacity: 0.4;
+                cursor: default;
             }
 
             .classes button {
@@ -247,7 +295,10 @@
     <body>
         <h1>School Database</h1>
         <p class="sub">Read-only student portal <span class="lock">🔒 auth required</span></p>
-        <div id="classes" class="classes"></div>
+        <div class="toolbar">
+            <div id="classes" class="classes"></div>
+            <button type="button" id="audit-log-link">Audit Log</button>
+        </div>
         <input type="search" id="q" placeholder="Search students..." disabled />
         <div id="meta" class="sub"></div>
         <div id="out"></div>

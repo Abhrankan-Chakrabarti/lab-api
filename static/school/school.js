@@ -5,7 +5,10 @@ const state = {
     limit: 25,
     searchTimer: null,
     requestId: 0,
+    auditOffset: 0,
 };
+
+const AUDIT_PAGE_SIZE = 50;
 
 async function api(path) {
     const r = await fetch(path, {
@@ -222,6 +225,91 @@ async function loadStudent(studentId, view = "auto") {
     }
 }
 
+async function loadAuditLog(offset = 0) {
+    state.auditOffset = offset;
+
+    try {
+        const data = await api(
+            `/school/api/admin/audit?limit=${AUDIT_PAGE_SIZE}&offset=${offset}`
+        );
+
+        renderAuditLog(data);
+    } catch (error) {
+        document.getElementById("out").innerHTML =
+            `<p class="err">${esc(error.message)}</p>`;
+    }
+
+    document.getElementById("meta").textContent = "";
+}
+
+function renderAuditLog(data) {
+    const events = data.events;
+
+    let html = `
+    <div class="audit-header">
+      <button type="button" id="back-from-audit">← Back</button>
+      <h2>Admin Audit Log</h2>
+    </div>
+  `;
+
+    if (events.length === 0) {
+        html += `<p class="err">No audit events${state.auditOffset > 0 ? " on this page" : " yet"}.</p>`;
+    } else {
+        html += `
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp (UTC)</th>
+            <th>User</th>
+            <th>Table</th>
+            <th>Student Code</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+        for (const event of events) {
+            html += `
+        <tr>
+          <td>${esc(event.timestamp)}</td>
+          <td>${esc(event.user)}</td>
+          <td>${esc(event.table)}</td>
+          <td>${esc(event.student_code)}</td>
+          <td>${esc(event.action)}</td>
+        </tr>
+      `;
+        }
+
+        html += `</tbody></table>`;
+    }
+
+    html += `
+    <div class="audit-pager">
+      <button type="button" id="audit-prev" ${data.offset <= 0 ? "disabled" : ""}>Prev</button>
+      <button type="button" id="audit-next" ${events.length < data.limit ? "disabled" : ""}>Next</button>
+    </div>
+  `;
+
+    document.getElementById("out").innerHTML = html;
+
+    document.getElementById("back-from-audit").onclick = () => {
+        if (state.table) {
+            loadPage();
+        } else {
+            document.getElementById("out").innerHTML = "";
+        }
+    };
+
+    document.getElementById("audit-prev").onclick = () => {
+        loadAuditLog(Math.max(0, data.offset - data.limit));
+    };
+
+    document.getElementById("audit-next").onclick = () => {
+        loadAuditLog(data.offset + data.limit);
+    };
+}
+
 function renderStudent(data, isAdmin = false, studentId = null) {
     const student = data.student;
     const accessBadge = isAdmin
@@ -293,6 +381,10 @@ document.getElementById("prev").onclick = () => {
 document.getElementById("next").onclick = () => {
     state.offset += state.limit;
     loadPage();
+};
+
+document.getElementById("audit-log-link").onclick = () => {
+    loadAuditLog(0);
 };
 
 document.getElementById("q").addEventListener("input", () => {
