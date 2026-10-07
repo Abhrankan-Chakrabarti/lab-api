@@ -5,6 +5,10 @@ use std::net::SocketAddr;
 use std::process::Command;
 use tower_http::services::ServeDir;
 
+mod prime;
+
+use prime::{is_prime, next_prime, prime_gap, prime_pi};
+
 mod school;
 
 use school::api::{router as school_router, SchoolState};
@@ -53,6 +57,20 @@ struct GcdResult {
 }
 
 #[derive(Serialize)]
+struct PrimeResult {
+    n: u64,
+    prime: bool,
+}
+
+#[derive(Serialize)]
+struct PrimeGapResult {
+    n: u64,
+    previous_prime: u64,
+    next_prime: u64,
+    gap: u64,
+}
+
+#[derive(Serialize)]
 struct ErrorBody {
     error: String,
 }
@@ -79,6 +97,10 @@ async fn info() -> Json<Info> {
             "GET /v1/math/catalan/:n",
             "GET /v1/math/fibonacci/:n",
             "GET /v1/math/gcd/:a/:b",
+            "GET /v1/math/is-prime/:n",
+            "GET /v1/math/next-prime/:n",
+            "GET /v1/math/pi/:n",
+            "GET /v1/math/prime-gap/:n",
             "GET /v1/catalan/:n",
             "GET /v1/snapshot",
             "GET /school/",
@@ -88,6 +110,7 @@ async fn info() -> Json<Info> {
             "GET /school/api/tables/:table/schema",
             "GET /school/api/tables/:table/students/:student_code",
             "GET /school/api/admin/tables/:table/students/:student_code",
+            "GET /school/api/admin/audit",
         ],
         build_profile: if cfg!(debug_assertions) {
             "debug"
@@ -224,6 +247,50 @@ async fn gcd_handler(Path((a, b)): Path<(u64, u64)>) -> Json<GcdResult> {
     })
 }
 
+async fn is_prime_handler(Path(n): Path<u64>) -> Json<PrimeResult> {
+    Json(PrimeResult {
+        n,
+        prime: is_prime(n),
+    })
+}
+
+async fn next_prime_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    match next_prime(n) {
+        Some(p) => Json(MathU64 {
+            n,
+            value: p.to_string(),
+        })
+        .into_response(),
+
+        None => err(
+            StatusCode::BAD_REQUEST,
+            "no larger prime exists in u64 range",
+        )
+        .into_response(),
+    }
+}
+
+async fn prime_pi_handler(Path(n): Path<u64>) -> Json<MathU64> {
+    Json(MathU64 {
+        n,
+        value: prime_pi(n).to_string(),
+    })
+}
+
+async fn prime_gap_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    match prime_gap(n) {
+        Some((previous, next, gap)) => Json(PrimeGapResult {
+            n,
+            previous_prime: previous,
+            next_prime: next,
+            gap,
+        })
+        .into_response(),
+
+        None => err(StatusCode::BAD_REQUEST, "n must be greater than 2").into_response(),
+    }
+}
+
 /// Build the existing public API router.
 fn api_router() -> Router {
     Router::new()
@@ -234,6 +301,10 @@ fn api_router() -> Router {
         .route("/v1/math/catalan/:n", get(catalan_handler))
         .route("/v1/math/fibonacci/:n", get(fibonacci_handler))
         .route("/v1/math/gcd/:a/:b", get(gcd_handler))
+        .route("/v1/math/is-prime/:n", get(is_prime_handler))
+        .route("/v1/math/next-prime/:n", get(next_prime_handler))
+        .route("/v1/math/pi/:n", get(prime_pi_handler))
+        .route("/v1/math/prime-gap/:n", get(prime_gap_handler))
         // Backward-compatible alias.
         .route("/v1/catalan/:n", get(catalan_handler))
 }
@@ -436,6 +507,47 @@ mod tests {
         assert_eq!(gcd(84, 30), 6);
     }
 
+    #[test]
+    fn prime_utilities_work() {
+        assert!(is_prime(2));
+        assert!(is_prime(97));
+
+        assert!(!is_prime(1));
+        assert!(!is_prime(100));
+
+        assert_eq!(next_prime(100), Some(101));
+        assert_eq!(prime_pi(100), 25);
+    }
+
+    #[test]
+    fn test_is_prime() {
+        assert!(is_prime(2));
+        assert!(is_prime(3));
+        assert!(is_prime(97));
+
+        assert!(!is_prime(0));
+        assert!(!is_prime(1));
+        assert!(!is_prime(100));
+    }
+
+    #[test]
+    fn test_next_prime() {
+        assert_eq!(next_prime(100), Some(101));
+        assert_eq!(next_prime(0), Some(2));
+    }
+
+    #[test]
+    fn test_next_prime_overflow() {
+        assert_eq!(next_prime(u64::MAX), None);
+    }
+
+    #[test]
+    fn test_prime_pi() {
+        assert_eq!(prime_pi(10), 4);
+        assert_eq!(prime_pi(100), 25);
+        assert_eq!(prime_pi(1000), 168);
+    }
+
     #[tokio::test]
     async fn info_advertises_math_routes_and_alias() {
         let (status, body) =
@@ -511,6 +623,15 @@ mod tests {
 
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["gcd"], 6);
+    }
+
+    #[tokio::test]
+    async fn prime_routes_return_expected_values() {
+        let (status, body) =
+            json_response(Request::get("/v1/math/pi/100").body(Body::empty()).unwrap()).await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["value"], "25");
     }
 
     #[tokio::test]
