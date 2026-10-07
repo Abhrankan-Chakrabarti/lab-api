@@ -1,3 +1,78 @@
+## lab-api v0.8.0
+
+Release date: 2026-10-07
+
+### Added
+- Added a dedicated prime-number module.
+- Added GET /v1/math/is-prime/:n for primality testing.
+- Added GET /v1/math/next-prime/:n for computing the next prime greater than n.
+- Added GET /v1/math/prime-gap/:n for computing the surrounding prime gap.
+- Added GET /v1/math/prime-pi/:n for computing the prime-counting function π(n).
+- Added GET /v1/math/pi/:n as a convenience alias for the prime-counting function π(n).
+- Added constants defining safe upper bounds for prime-counting and prime-search operations.
+- Added unit tests covering primality testing, next-prime computation, previous-prime computation, prime-gap computation, and prime-counting.
+- Added API tests covering all new prime-number endpoints.
+- Updated the public metadata endpoint to advertise the new mathematical routes.
+
+### Security
+- Added explicit upper bounds to prime-counting requests to prevent excessive memory allocation from large sieve requests.
+- Prime-number endpoints remain read-only and require no additional privileges.
+- Existing Nginx HTTPS, Basic Authentication, localhost binding, and snapshot protections remain unchanged.
+
+### Compatibility
+- Existing Catalan, Fibonacci, GCD, snapshot, metadata, School Database, and importer functionality remain unchanged.
+- Preserved existing mathematical endpoint behaviour and response formats.
+- Added /v1/math/pi/:n as an alias while retaining the explicit /v1/math/prime-pi/:n route.
+- The existing localhost/systemd/Nginx deployment shape remains unchanged.
+- No additional runtime services, databases, containers, or external dependencies are required.
+
+### Validation
+- cargo fmt passes.
+- cargo test passes.
+- Debug test suite: **65/65 tests passed**.
+- Verified:
+  - is-prime(97) → true
+  - next-prime(100) → 101
+  - π(1000) → 168
+  - prime-gap(1000) → previous=997, next=1009, gap=12
+- Verified rejection of prime-counting requests exceeding the configured limit.
+- Verified successful deployment and end-to-end API operation.
+
+### Freeze scope
+
+Core API
+
+/health
+/v1/info
+/v1/catalan/:n
+/v1/math/catalan/:n
+/v1/math/fibonacci/:n
+/v1/math/gcd/:a/:b
+/v1/math/is-prime/:n
+/v1/math/next-prime/:n
+/v1/math/prime-gap/:n
+/v1/math/prime-pi/:n
+/v1/math/pi/:n
+/v1/snapshot
+
+School Database
+
+/school/
+/school/api/health
+/school/api/tables
+/school/api/tables/{table}
+/school/api/tables/{table}/schema
+/school/api/tables/{table}/students/{student_id}
+/school/api/admin/tables/{table}/students/{student_id}
+
+School Database Importer
+
+lab-api import <candidate.db>
+
+The School Database remains intentionally read-only during runtime. Database replacement continues to be supported only through the separate validated importer workflow.
+
+---
+
 # lab-api v0.7.1
 
 ## Added
