@@ -7,7 +7,7 @@ use tower_http::services::ServeDir;
 
 mod prime;
 
-use prime::{is_prime, next_prime, prime_gap, prime_pi};
+use prime::{is_prime, next_prime, prime_gap, prime_pi, MAX_PRIME_PI_N, MAX_PRIME_SCAN_N};
 
 mod school;
 
@@ -99,6 +99,7 @@ async fn info() -> Json<Info> {
             "GET /v1/math/gcd/:a/:b",
             "GET /v1/math/is-prime/:n",
             "GET /v1/math/next-prime/:n",
+            "GET /v1/math/prime-pi/:n",
             "GET /v1/math/pi/:n",
             "GET /v1/math/prime-gap/:n",
             "GET /v1/catalan/:n",
@@ -247,21 +248,37 @@ async fn gcd_handler(Path((a, b)): Path<(u64, u64)>) -> Json<GcdResult> {
     })
 }
 
-async fn is_prime_handler(Path(n): Path<u64>) -> Json<PrimeResult> {
+async fn is_prime_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    if n > MAX_PRIME_SCAN_N {
+        return err(
+            StatusCode::BAD_REQUEST,
+            format!("n must be <= {MAX_PRIME_SCAN_N} for this demo"),
+        )
+        .into_response();
+    }
+
     Json(PrimeResult {
         n,
         prime: is_prime(n),
     })
+    .into_response()
 }
 
 async fn next_prime_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    if n > MAX_PRIME_SCAN_N {
+        return err(
+            StatusCode::BAD_REQUEST,
+            format!("n must be <= {MAX_PRIME_SCAN_N} for this demo"),
+        )
+        .into_response();
+    }
+
     match next_prime(n) {
         Some(p) => Json(MathU64 {
             n,
             value: p.to_string(),
         })
         .into_response(),
-
         None => err(
             StatusCode::BAD_REQUEST,
             "no larger prime exists in u64 range",
@@ -270,14 +287,34 @@ async fn next_prime_handler(Path(n): Path<u64>) -> impl IntoResponse {
     }
 }
 
-async fn prime_pi_handler(Path(n): Path<u64>) -> Json<MathU64> {
+/// Prime-counting function π(n), not the constant π.
+async fn prime_pi_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    if n > MAX_PRIME_PI_N {
+        return err(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "n must be <= {MAX_PRIME_PI_N} for this demo (prime-counting π(n) sieve limit)"
+            ),
+        )
+        .into_response();
+    }
+
     Json(MathU64 {
         n,
         value: prime_pi(n).to_string(),
     })
+    .into_response()
 }
 
 async fn prime_gap_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    if n > MAX_PRIME_SCAN_N {
+        return err(
+            StatusCode::BAD_REQUEST,
+            format!("n must be <= {MAX_PRIME_SCAN_N} for this demo"),
+        )
+        .into_response();
+    }
+
     match prime_gap(n) {
         Some((previous, next, gap)) => Json(PrimeGapResult {
             n,
@@ -286,7 +323,6 @@ async fn prime_gap_handler(Path(n): Path<u64>) -> impl IntoResponse {
             gap,
         })
         .into_response(),
-
         None => err(StatusCode::BAD_REQUEST, "n must be greater than 2").into_response(),
     }
 }
@@ -303,7 +339,8 @@ fn api_router() -> Router {
         .route("/v1/math/gcd/:a/:b", get(gcd_handler))
         .route("/v1/math/is-prime/:n", get(is_prime_handler))
         .route("/v1/math/next-prime/:n", get(next_prime_handler))
-        .route("/v1/math/pi/:n", get(prime_pi_handler))
+        .route("/v1/math/prime-pi/:n", get(prime_pi_handler))
+        .route("/v1/math/pi/:n", get(prime_pi_handler)) // alias; document as π(n)
         .route("/v1/math/prime-gap/:n", get(prime_gap_handler))
         // Backward-compatible alias.
         .route("/v1/catalan/:n", get(catalan_handler))
@@ -627,11 +664,52 @@ mod tests {
 
     #[tokio::test]
     async fn prime_routes_return_expected_values() {
+        let (status, body) = json_response(
+            Request::get("/v1/math/is-prime/97")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["prime"], true);
+
+        let (status, body) = json_response(
+            Request::get("/v1/math/next-prime/100")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["value"], "101");
+
         let (status, body) =
             json_response(Request::get("/v1/math/pi/100").body(Body::empty()).unwrap()).await;
-
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["value"], "25");
+
+        let (status, body) = json_response(
+            Request::get("/v1/math/prime-gap/1000")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["previous_prime"], 997);
+        assert_eq!(body["next_prime"], 1009);
+        assert_eq!(body["gap"], 12);
+    }
+
+    #[tokio::test]
+    async fn prime_pi_rejects_over_limit() {
+        let over = MAX_PRIME_PI_N + 1;
+        let (status, body) = json_response(
+            Request::get(format!("/v1/math/pi/{over}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].as_str().unwrap().contains("1000000"));
     }
 
     #[tokio::test]
