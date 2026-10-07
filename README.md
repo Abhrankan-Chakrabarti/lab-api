@@ -15,7 +15,7 @@ The application is designed to run as a **localhost-only systemd service**, with
 - 🔑 HTTP Basic Authentication for sensitive system information
 - 📊 Linux system snapshot endpoint
 - ℹ️ Public application information endpoint
-- 🔢 Catalan, Fibonacci, and GCD computation
+- 🔢 Catalan, Fibonacci, GCD, and prime-number computation
 - 🏫 Read-only School database API with privacy-filtered student details
 - 🛡️ Allowlisted admin access to full School student records
 - 📥 Validated one-shot School database importer
@@ -62,7 +62,7 @@ Nginx provides the public HTTPS interface and forwards requests to the local app
 
 For the canonical API contract, see [`API.md`](API.md).
 
-For the `v0.7.1` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
+For the `v0.8.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
 
 This README focuses on the public core `/api/*` surface. The separate School module is summarized below; see [`API.md`](API.md) and [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for its routes, privacy boundary, admin authorization, and importer history.
 
@@ -99,6 +99,11 @@ The core math routes are public, read-only GET endpoints:
 GET /api/v1/math/catalan/:n
 GET /api/v1/math/fibonacci/:n
 GET /api/v1/math/gcd/:a/:b
+GET /api/v1/math/is-prime/:n
+GET /api/v1/math/next-prime/:n
+GET /api/v1/math/prime-gap/:n
+GET /api/v1/math/prime-pi/:n
+GET /api/v1/math/pi/:n
 ```
 
 The original route remains available as a compatibility alias:
@@ -130,7 +135,30 @@ Fibonacci response for `n = 10`:
 GCD uses the Euclidean algorithm and accepts any `u64` path values, including zero:
 
 ```bash
-curl https://example.com/api/v1/math/gcd/84/30
+curl https://abhrankan.duckdns.org/api/v1/math/gcd/84/30
+```
+
+Prime-number routes are public and read-only:
+
+```http
+GET /api/v1/math/is-prime/:n
+GET /api/v1/math/next-prime/:n
+GET /api/v1/math/prime-gap/:n
+GET /api/v1/math/prime-pi/:n
+GET /api/v1/math/pi/:n
+```
+
+Prime searches and prime gaps support `0 ≤ n ≤ 1,000,000`. The prime-counting
+function π(n) uses the same bounded limit to keep memory usage predictable;
+`/api/v1/math/pi/:n` is an alias for `/api/v1/math/prime-pi/:n`.
+
+Examples:
+
+```bash
+curl https://abhrankan.duckdns.org/api/v1/math/is-prime/97
+curl https://abhrankan.duckdns.org/api/v1/math/next-prime/100
+curl https://abhrankan.duckdns.org/api/v1/math/prime-gap/1000
+curl https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000
 ```
 
 ```json
@@ -200,7 +228,7 @@ HTTP/1.1 401 Unauthorized
 With valid credentials:
 
 ```bash
-curl -u 'username' https://example.com/api/v1/snapshot
+curl -u 'username' https://abhrankan.duckdns.org/api/v1/snapshot
 ```
 
 Authentication is handled by Nginx rather than by the Rust application.
@@ -232,7 +260,7 @@ n = 34
 Example:
 
 ```bash
-curl https://example.com/api/v1/catalan/10
+curl https://abhrankan.duckdns.org/api/v1/catalan/10
 ```
 
 Response:
@@ -247,7 +275,7 @@ Response:
 The largest supported input can also be requested:
 
 ```bash
-curl https://example.com/api/v1/catalan/34
+curl https://abhrankan.duckdns.org/api/v1/catalan/34
 ```
 
 Response:
@@ -279,10 +307,14 @@ with:
 
 The School API is a separate read-only SQLite surface under `/school/`; it is not part of the database-free core `/api/*` service. The active database path is configured with `SCHOOL_DB_PATH` and is opened read-only during normal operation.
 
-In production, **the entire `/school/` location is protected by Nginx Basic Auth**. The backend does not re-implement that gate; admin routes add an allowlist on top of it.
+In production, `/school/` serves the public portal UI and static assets. The exact `/school/api/health` route is also public. Nginx Basic Auth protects the remaining `/school/api/` routes; the backend does not re-implement that edge gate. Admin routes add an allowlist on top of it.
 
+- `GET /school/` serves the public School portal.
+- `GET /school/api/health` provides public School API health.
+- `GET /school/api/tables` lists available tables; table pages and schemas require Nginx Basic Auth.
 - `GET /school/api/tables/{table}/students/{student_code}` returns privacy-filtered student details (Nginx Basic Auth).
-- `GET /school/api/admin/tables/{table}/students/{student_code}` returns full schema details only when Nginx Basic Auth succeeds and `X-Authenticated-User` names a user in `LAB_API_ADMIN_USERS`.
+- `GET /school/api/admin/tables/{table}/students/{student_code}` returns full schema details only when Nginx Basic Auth succeeds and `X-Authenticated-User` names a user in `LAB_API_ADMIN_USERS`; access is recorded in the admin audit log.
+- `GET /school/api/admin/audit` returns paginated admin student-detail audit events for allowlisted users.
 - A validated one-shot importer can replace the School database after checking the candidate file; normal API requests do not write to it.
 
 See [`API.md`](API.md) for the route and security contract and [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for the School feature history.
@@ -298,13 +330,22 @@ lab-api/
 ├── API.md
 ├── DEPLOYMENT_GUIDE.md
 ├── RELEASE_NOTES.md
+├── LICENSE
 ├── deploy.sh
 ├── health-check.sh
 ├── lab-api.service.hardened
+├── static/
+│   └── school/
+│       ├── index.html
+│       ├── login.html
+│       ├── README.txt
+│       └── school.js
 └── src/
     ├── main.rs
+    ├── prime.rs
     └── school/
         ├── api.rs
+        ├── audit.rs
         ├── db.rs
         ├── import.rs
         └── mod.rs
@@ -342,13 +383,31 @@ Contains:
 - Application information endpoint
 - System snapshot collection
 - Catalan, Fibonacci, and GCD calculation
+- Prime-number and prime-counting route wiring
 - Backward-compatible Catalan route
 - Mounts the School API router from `src/school/`
 - `lab-api import` command dispatch for the School database importer
 - Unit and HTTP router tests for the core API
 - Local TCP listener and Axum server initialization
 
-School handlers, SQLite access, privacy filtering, and admin allowlist logic live under `src/school/`.
+### `src/prime.rs`
+
+Contains bounded prime utilities used by the public math API:
+
+- Primality testing
+- Next- and previous-prime search
+- Prime gaps
+- Prime-counting function π(n)
+
+### `src/school/`
+
+Contains the School API, SQLite access, privacy filtering, admin authorization,
+audit logging, and validated database import logic.
+
+### `static/school/`
+
+Contains the public School portal UI and its static assets. The directory is
+served below `/school/`; the API routes remain below `/school/api/`.
 
 ### `API.md`
 
@@ -597,7 +656,7 @@ server {
     listen 80;
     listen [::]:80;
 
-    server_name example.com;
+    server_name abhrankan.duckdns.org;
 
     location /.well-known/acme-challenge/ {
         root /var/www/letsencrypt;
@@ -612,10 +671,10 @@ server {
     listen 443 ssl;
     listen [::]:443 ssl;
 
-    server_name example.com;
+    server_name abhrankan.duckdns.org;
 
-    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/abhrankan.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/abhrankan.duckdns.org/privkey.pem;
 
     location /api/ {
         proxy_pass http://127.0.0.1:8088/;
@@ -654,10 +713,14 @@ location = /api/v1/snapshot {
 }
 ```
 
-School UI and API should remain behind Basic Auth for the whole prefix, with the authenticated username forwarded for admin checks:
+Protect the School API while leaving the portal UI and exact health route public. Forward the authenticated username for admin checks:
 
 ```nginx
-location /school/ {
+location = /school/api/health {
+    proxy_pass http://127.0.0.1:8088;
+}
+
+location /school/api/ {
     auth_basic "School Database";
     auth_basic_user_file /etc/nginx/school.htpasswd;
 
@@ -667,6 +730,10 @@ location /school/ {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Authenticated-User $remote_user;
+}
+
+location /school/ {
+    proxy_pass http://127.0.0.1:8088;
 }
 ```
 
@@ -711,9 +778,10 @@ Internet
    │
    ├── Basic Authentication → /api/v1/snapshot
    │
-   └── Basic Authentication → /school/*
+   ├── Public UI and health → /school/ and /school/api/health
+   └── Basic Authentication → /school/api/*
           │
-          └── admin allowlist for full student detail
+          └── admin allowlist for full student detail and audit
           │
           ▼
       lab-api
@@ -726,11 +794,11 @@ Nginx is responsible for:
 
 - TLS termination
 - Public routing
-- Authentication for protected endpoints (`/api/v1/snapshot`, `/school/`)
+- Authentication for protected endpoints (`/api/v1/snapshot`, `/school/api/*`)
 - Forwarding requests to the local service
 - Setting `X-Authenticated-User` from `$remote_user` for School admin authorization
 
-The `/v1/snapshot` endpoint should remain protected when exposed through a public reverse proxy because it reveals information about the underlying host. The `/school/` tree should remain protected because it exposes student records.
+The `/v1/snapshot` endpoint should remain protected when exposed through a public reverse proxy because it reveals information about the underlying host. The School API routes should remain protected because they expose student records; the portal UI and health check are intentionally public.
 
 ---
 
@@ -815,17 +883,17 @@ cargo build --release
 For a deployed instance, verify the public API:
 
 ```bash
-curl -fsS https://example.com/api/health
+curl -fsS https://abhrankan.duckdns.org/api/health
 ```
 
 ```bash
-curl -fsS https://example.com/api/v1/catalan/10
+curl -fsS https://abhrankan.duckdns.org/api/v1/catalan/10
 ```
 
 Verify that the protected endpoint requires authentication:
 
 ```bash
-curl -i https://example.com/api/v1/snapshot
+curl -i https://abhrankan.duckdns.org/api/v1/snapshot
 ```
 
 Expected:
@@ -837,7 +905,7 @@ HTTP/1.1 401 Unauthorized
 Then authenticate:
 
 ```bash
-curl -u 'username' https://example.com/api/v1/snapshot
+curl -u 'username' https://abhrankan.duckdns.org/api/v1/snapshot
 ```
 
 ---
@@ -851,10 +919,21 @@ curl -u 'username' https://example.com/api/v1/snapshot
 | `/api/v1/math/catalan/:n` | GET | None | Catalan number calculation |
 | `/api/v1/math/fibonacci/:n` | GET | None | Fibonacci number calculation |
 | `/api/v1/math/gcd/:a/:b` | GET | None | Greatest common divisor |
+| `/api/v1/math/is-prime/:n` | GET | None | Primality test |
+| `/api/v1/math/next-prime/:n` | GET | None | Next prime |
+| `/api/v1/math/prime-gap/:n` | GET | None | Surrounding prime gap |
+| `/api/v1/math/prime-pi/:n` | GET | None | Prime-counting function π(n) |
+| `/api/v1/math/pi/:n` | GET | None | Prime-counting alias |
 | `/api/v1/catalan/:n` | GET | None | Catalan number calculation (alias) |
 | `/api/v1/snapshot` | GET | Nginx Basic Auth | Host/system snapshot |
+| `/school/` | GET | None | Public School portal UI |
+| `/school/api/health` | GET | None | School API health |
+| `/school/api/tables` | GET | Nginx Basic Auth | Available School tables |
+| `/school/api/tables/{table}` | GET | Nginx Basic Auth | Paginated safe student rows |
+| `/school/api/tables/{table}/schema` | GET | Nginx Basic Auth | Table schema |
 | `/school/api/tables/{table}/students/{student_code}` | GET | Nginx Basic Auth | Privacy-filtered student detail |
-| `/school/api/admin/tables/{table}/students/{student_code}` | GET | Nginx Basic Auth + admin allowlist | Full student detail |
+| `/school/api/admin/tables/{table}/students/{student_code}` | GET | Nginx Basic Auth + admin allowlist | Full student detail and audit event |
+| `/school/api/admin/audit` | GET | Nginx Basic Auth + admin allowlist | Admin access audit events |
 
 Paths above are the public URL shapes when Nginx strips or prefixes as in the examples. Backend listen paths omit the `/api` prefix for core routes.
 
@@ -885,6 +964,7 @@ The current implementation is intentionally simple.
 - Catalan computation is limited to `n <= 34`.
 - Fibonacci computation is limited to `n <= 186` by the `u128` boundary.
 - GCD accepts `u64` path values, including zero.
+- Prime search and prime-counting requests are bounded at `n <= 1,000,000`.
 - The snapshot endpoint is Linux-oriented.
 - System information is collected directly from Linux files such as `/proc/loadavg` and `/proc/meminfo`.
 - Uptime is obtained through the system `uptime` command.
