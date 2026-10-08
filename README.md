@@ -106,7 +106,8 @@ GET /api/v1/math/prime-pi/:n
 GET /api/v1/math/pi/:n
 ```
 
-The original route remains available as a compatibility alias:
+The original route remains available as a deprecated compatibility alias for
+existing clients. New clients should use the canonical route above:
 
 ```http
 GET /api/v1/catalan/:n
@@ -236,7 +237,7 @@ Authentication is handled by Nginx rather than by the Rust application.
 ### Catalan Numbers
 
 ```http
-GET /api/v1/catalan/:n
+GET /api/v1/math/catalan/:n
 ```
 
 Computes the `n`th Catalan number.
@@ -260,7 +261,7 @@ n = 34
 Example:
 
 ```bash
-curl https://abhrankan.duckdns.org/api/v1/catalan/10
+curl https://abhrankan.duckdns.org/api/v1/math/catalan/10
 ```
 
 Response:
@@ -275,7 +276,7 @@ Response:
 The largest supported input can also be requested:
 
 ```bash
-curl https://abhrankan.duckdns.org/api/v1/catalan/34
+curl https://abhrankan.duckdns.org/api/v1/math/catalan/34
 ```
 
 Response:
@@ -551,7 +552,7 @@ Expected response:
 Test the Catalan endpoint:
 
 ```bash
-curl http://127.0.0.1:8088/v1/catalan/10
+curl http://127.0.0.1:8088/v1/math/catalan/10
 ```
 
 ---
@@ -809,7 +810,7 @@ Invalid Catalan-number requests return JSON errors.
 For example:
 
 ```http
-GET /api/v1/catalan/35
+GET /api/v1/math/catalan/35
 ```
 
 returns:
@@ -887,7 +888,7 @@ curl -fsS https://abhrankan.duckdns.org/api/health
 ```
 
 ```bash
-curl -fsS https://abhrankan.duckdns.org/api/v1/catalan/10
+curl -fsS https://abhrankan.duckdns.org/api/v1/math/catalan/10
 ```
 
 Verify that the protected endpoint requires authentication:
@@ -924,7 +925,7 @@ curl -u 'username' https://abhrankan.duckdns.org/api/v1/snapshot
 | `/api/v1/math/prime-gap/:n` | GET | None | Surrounding prime gap |
 | `/api/v1/math/prime-pi/:n` | GET | None | Prime-counting function π(n) |
 | `/api/v1/math/pi/:n` | GET | None | Prime-counting alias |
-| `/api/v1/catalan/:n` | GET | None | Catalan number calculation (alias) |
+| `/api/v1/catalan/:n` | GET | None | Deprecated Catalan compatibility alias |
 | `/api/v1/snapshot` | GET | Nginx Basic Auth | Host/system snapshot |
 | `/school/` | GET | None | Public School portal UI |
 | `/school/api/health` | GET | None | School API health |
