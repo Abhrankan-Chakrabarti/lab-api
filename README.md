@@ -15,7 +15,7 @@ The application is designed to run as a **localhost-only systemd service**, with
 - 🔑 HTTP Basic Authentication for sensitive system information
 - 📊 Linux system snapshot endpoint
 - ℹ️ Public application information endpoint
-- 🔢 Catalan, Fibonacci, GCD, and prime-number computation
+- 🔢 Catalan, Fibonacci, GCD, prime-number, factorisation, totient, and Möbius computation
 - 🏫 Read-only School database API with privacy-filtered student details
 - 🛡️ Allowlisted admin access to full School student records
 - 📥 Validated one-shot School database importer
@@ -364,6 +364,7 @@ See [`API.md`](API.md) for the route and security contract and [`RELEASE_NOTES.m
 lab-api/
 ├── .gitignore
 ├── Cargo.toml
+├── Cargo.lock
 ├── API.md
 ├── DEPLOYMENT_GUIDE.md
 ├── RELEASE_NOTES.md
@@ -380,6 +381,7 @@ lab-api/
 └── src/
     ├── main.rs
     ├── prime.rs
+    ├── factor.rs
     └── school/
         ├── api.rs
         ├── audit.rs
@@ -439,7 +441,11 @@ Contains bounded prime utilities used by the public math API:
 
 ### `src/factor.rs`
 
-Contains prime factorisation utilities used by the public factor endpoint.
+Contains bounded trial-division utilities used by the public number-theory API:
+
+- Prime factorisation
+- Euler's totient function φ(n)
+- Möbius function μ(n)
 
 ### `src/school/`
 
