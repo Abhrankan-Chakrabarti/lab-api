@@ -1,3 +1,29 @@
+## lab-api v0.9.0
+
+Release date: 2026-10-09
+
+### Added
+
+- Added bounded prime factorisation with `GET /v1/math/factor/:n`.
+- Added Euler's totient function with `GET /v1/math/totient/:n`.
+- Added the Möbius function with `GET /v1/math/mobius/:n`.
+- Added shared factorisation utilities and tests for edge cases, multiplicative
+  functions, and over-limit requests.
+- Updated `/v1/info`, `API.md`, and `README.md` with the new endpoints.
+
+### Safety
+
+- Factorisation, totient, and Möbius requests are capped at `n ≤ 1,000,000`.
+- The implementation uses bounded trial division for lab demonstrations and is
+  not intended to be a general factoring service.
+
+### Validation
+
+- `cargo fmt` passes.
+- `cargo test` passes with 75 tests.
+
+---
+
 ## lab-api v0.8.0
 
 Release date: 2026-10-07

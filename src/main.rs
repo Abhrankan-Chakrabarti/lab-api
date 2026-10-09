@@ -5,8 +5,10 @@ use std::net::SocketAddr;
 use std::process::Command;
 use tower_http::services::ServeDir;
 
+mod factor;
 mod prime;
 
+use factor::{factorise, mobius, totient, MAX_FACTOR_N};
 use prime::{is_prime, next_prime, prime_gap, prime_pi, MAX_PRIME_PI_N, MAX_PRIME_SCAN_N};
 
 mod school;
@@ -71,6 +73,24 @@ struct PrimeGapResult {
 }
 
 #[derive(Serialize)]
+struct FactorResponse {
+    n: u64,
+    factors: Vec<FactorEntry>,
+}
+
+#[derive(Serialize)]
+struct FactorEntry {
+    prime: u64,
+    power: u32,
+}
+
+#[derive(Serialize)]
+struct MobiusResult {
+    n: u64,
+    value: i8,
+}
+
+#[derive(Serialize)]
 struct ErrorBody {
     error: String,
 }
@@ -102,6 +122,9 @@ async fn info() -> Json<Info> {
             "GET /v1/math/prime-pi/:n",
             "GET /v1/math/pi/:n",
             "GET /v1/math/prime-gap/:n",
+            "GET /v1/math/factor/:n",
+            "GET /v1/math/totient/:n",
+            "GET /v1/math/mobius/:n",
             "GET /v1/catalan/:n",
             "GET /v1/snapshot",
             "GET /school/",
@@ -327,6 +350,58 @@ async fn prime_gap_handler(Path(n): Path<u64>) -> impl IntoResponse {
     }
 }
 
+async fn factor_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    if n > MAX_FACTOR_N {
+        return err(
+            StatusCode::BAD_REQUEST,
+            format!("n must be <= {MAX_FACTOR_N} for this demo"),
+        )
+        .into_response();
+    }
+
+    let factors = factorise(n)
+        .into_iter()
+        .map(|factor| FactorEntry {
+            prime: factor.prime,
+            power: factor.power,
+        })
+        .collect();
+
+    Json(FactorResponse { n, factors }).into_response()
+}
+
+async fn totient_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    if n > MAX_FACTOR_N {
+        return err(
+            StatusCode::BAD_REQUEST,
+            format!("n must be <= {MAX_FACTOR_N} for this demo"),
+        )
+        .into_response();
+    }
+
+    Json(MathU64 {
+        n,
+        value: totient(n).to_string(),
+    })
+    .into_response()
+}
+
+async fn mobius_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    if n > MAX_FACTOR_N {
+        return err(
+            StatusCode::BAD_REQUEST,
+            format!("n must be <= {MAX_FACTOR_N} for this demo"),
+        )
+        .into_response();
+    }
+
+    Json(MobiusResult {
+        n,
+        value: mobius(n),
+    })
+    .into_response()
+}
+
 /// Build the existing public API router.
 fn api_router() -> Router {
     Router::new()
@@ -342,6 +417,9 @@ fn api_router() -> Router {
         .route("/v1/math/prime-pi/:n", get(prime_pi_handler))
         .route("/v1/math/pi/:n", get(prime_pi_handler)) // alias; document as π(n)
         .route("/v1/math/prime-gap/:n", get(prime_gap_handler))
+        .route("/v1/math/factor/:n", get(factor_handler))
+        .route("/v1/math/totient/:n", get(totient_handler))
+        .route("/v1/math/mobius/:n", get(mobius_handler))
         // Backward-compatible alias.
         .route("/v1/catalan/:n", get(catalan_handler))
 }
@@ -620,6 +698,17 @@ mod tests {
             .iter()
             .any(|route| route == "GET /v1/math/gcd/:a/:b"));
 
+        assert!(endpoints
+            .iter()
+            .any(|route| route == "GET /v1/math/factor/:n"));
+
+        assert!(endpoints
+            .iter()
+            .any(|route| route == "GET /v1/math/totient/:n"));
+        assert!(endpoints
+            .iter()
+            .any(|route| route == "GET /v1/math/mobius/:n"));
+
         assert!(endpoints.iter().any(|route| route == "GET /school/"));
     }
 
@@ -697,6 +786,86 @@ mod tests {
         assert_eq!(body["previous_prime"], 997);
         assert_eq!(body["next_prime"], 1009);
         assert_eq!(body["gap"], 12);
+    }
+
+    #[tokio::test]
+    async fn factor_route_returns_expected_values() {
+        let (status, body) = json_response(
+            Request::get("/v1/math/factor/360")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["n"], 360);
+        assert_eq!(body["factors"][0]["prime"], 2);
+        assert_eq!(body["factors"][0]["power"], 3);
+        assert_eq!(body["factors"][1]["prime"], 3);
+        assert_eq!(body["factors"][1]["power"], 2);
+        assert_eq!(body["factors"][2]["prime"], 5);
+        assert_eq!(body["factors"][2]["power"], 1);
+    }
+
+    #[tokio::test]
+    async fn factor_route_rejects_over_limit() {
+        let over = MAX_FACTOR_N + 1;
+        let (status, body) = json_response(
+            Request::get(format!("/v1/math/factor/{over}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body["error"].as_str().unwrap().contains("1000000"));
+    }
+
+    #[tokio::test]
+    async fn multiplicative_routes_return_expected_values() {
+        let (status, body) = json_response(
+            Request::get("/v1/math/totient/36")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["n"], 36);
+        assert_eq!(body["value"], "12");
+
+        let (status, body) = json_response(
+            Request::get("/v1/math/mobius/30")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["n"], 30);
+        assert_eq!(body["value"], -1);
+
+        let (status, body) = json_response(
+            Request::get("/v1/math/mobius/36")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["value"], 0);
+    }
+
+    #[tokio::test]
+    async fn multiplicative_routes_reject_over_limit() {
+        let over = MAX_FACTOR_N + 1;
+        for route in ["totient", "mobius"] {
+            let (status, body) = json_response(
+                Request::get(format!("/v1/math/{route}/{over}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST);
+            assert!(body["error"].as_str().unwrap().contains("1000000"));
+        }
     }
 
     #[tokio::test]

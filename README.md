@@ -62,7 +62,7 @@ Nginx provides the public HTTPS interface and forwards requests to the local app
 
 For the canonical API contract, see [`API.md`](API.md).
 
-For the `v0.8.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
+For the `v0.9.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
 
 This README focuses on the public core `/api/*` surface. The separate School module is summarized below; see [`API.md`](API.md) and [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for its routes, privacy boundary, admin authorization, and importer history.
 
@@ -104,6 +104,9 @@ GET /api/v1/math/next-prime/:n
 GET /api/v1/math/prime-gap/:n
 GET /api/v1/math/prime-pi/:n
 GET /api/v1/math/pi/:n
+GET /api/v1/math/factor/:n
+GET /api/v1/math/totient/:n
+GET /api/v1/math/mobius/:n
 ```
 
 The original route remains available as a deprecated compatibility alias for
@@ -147,11 +150,41 @@ GET /api/v1/math/next-prime/:n
 GET /api/v1/math/prime-gap/:n
 GET /api/v1/math/prime-pi/:n
 GET /api/v1/math/pi/:n
+GET /api/v1/math/factor/:n
+GET /api/v1/math/totient/:n
+GET /api/v1/math/mobius/:n
 ```
 
 Prime searches and prime gaps support `0 ≤ n ≤ 1,000,000`. The prime-counting
 function π(n) uses the same bounded limit to keep memory usage predictable;
 `/api/v1/math/pi/:n` is an alias for `/api/v1/math/prime-pi/:n`.
+
+Factorisation is available at `/api/v1/math/factor/:n` for
+`0 ≤ n ≤ 1,000,000`. It uses bounded trial division for this demonstration,
+not as a general factoring service, and returns distinct prime factors with
+their exponents in ascending order:
+
+```json
+{
+  "n": 360,
+  "factors": [
+    { "prime": 2, "power": 3 },
+    { "prime": 3, "power": 2 },
+    { "prime": 5, "power": 1 }
+  ]
+}
+```
+
+Euler's totient and Möbius functions build on the same bounded factorisation
+module:
+
+```text
+GET /api/v1/math/totient/:n
+GET /api/v1/math/mobius/:n
+```
+
+Both endpoints accept `0 ≤ n ≤ 1,000,000`. Totient returns a string-valued
+result, while Möbius returns `-1`, `0`, or `1`.
 
 Examples:
 
@@ -160,6 +193,9 @@ curl https://abhrankan.duckdns.org/api/v1/math/is-prime/97
 curl https://abhrankan.duckdns.org/api/v1/math/next-prime/100
 curl https://abhrankan.duckdns.org/api/v1/math/prime-gap/1000
 curl https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000
+curl https://abhrankan.duckdns.org/api/v1/math/factor/360
+curl https://abhrankan.duckdns.org/api/v1/math/totient/36
+curl https://abhrankan.duckdns.org/api/v1/math/mobius/30
 ```
 
 ```json
@@ -385,6 +421,7 @@ Contains:
 - System snapshot collection
 - Catalan, Fibonacci, and GCD calculation
 - Prime-number and prime-counting route wiring
+- Prime factorisation route wiring
 - Backward-compatible Catalan route
 - Mounts the School API router from `src/school/`
 - `lab-api import` command dispatch for the School database importer
@@ -399,6 +436,10 @@ Contains bounded prime utilities used by the public math API:
 - Next- and previous-prime search
 - Prime gaps
 - Prime-counting function π(n)
+
+### `src/factor.rs`
+
+Contains prime factorisation utilities used by the public factor endpoint.
 
 ### `src/school/`
 

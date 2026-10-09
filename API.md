@@ -42,6 +42,9 @@ https://abhrankan.duckdns.org/api/v1/math/next-prime/100
 https://abhrankan.duckdns.org/api/v1/math/prime-gap/1000
 https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000
 https://abhrankan.duckdns.org/api/v1/math/pi/1000
+https://abhrankan.duckdns.org/api/v1/math/factor/360
+https://abhrankan.duckdns.org/api/v1/math/totient/36
+https://abhrankan.duckdns.org/api/v1/math/mobius/30
 https://abhrankan.duckdns.org/api/v1/snapshot
 https://abhrankan.duckdns.org/school/
 https://abhrankan.duckdns.org/school/api/health
@@ -66,6 +69,9 @@ http://127.0.0.1:8088/v1/math/next-prime/100
 http://127.0.0.1:8088/v1/math/prime-gap/1000
 http://127.0.0.1:8088/v1/math/prime-pi/1000
 http://127.0.0.1:8088/v1/math/pi/1000
+http://127.0.0.1:8088/v1/math/factor/360
+http://127.0.0.1:8088/v1/math/totient/36
+http://127.0.0.1:8088/v1/math/mobius/30
 http://127.0.0.1:8088/v1/snapshot
 http://127.0.0.1:8088/school/
 http://127.0.0.1:8088/school/api/health
@@ -93,6 +99,9 @@ The routes in this table are **backend** paths. Public clients prefix core route
 | GET | `/v1/math/prime-gap/:n` | None | Surrounding prime gap, `2 < n ≤ 1,000,000` |
 | GET | `/v1/math/prime-pi/:n` | None | Prime-counting function π(n), `0 ≤ n ≤ 1,000,000` |
 | GET | `/v1/math/pi/:n` | None | Prime-counting function π(n), compatibility alias |
+| GET | `/v1/math/factor/:n` | None | Prime factorisation of `n`, `0 ≤ n ≤ 1,000,000` |
+| GET | `/v1/math/totient/:n` | None | Euler's totient φ(n), `0 ≤ n ≤ 1,000,000` |
+| GET | `/v1/math/mobius/:n` | None | Möbius function μ(n), `0 ≤ n ≤ 1,000,000` |
 | GET | `/v1/catalan/:n` | None | Deprecated Catalan compatibility alias; use `/v1/math/catalan/:n`, `0 ≤ n ≤ 34` |
 | GET | `/v1/snapshot` | Nginx Basic Auth | Host/system snapshot |
 | GET | `/school/` | None | Public School portal UI and static assets |
@@ -312,13 +321,17 @@ GET /v1/math/next-prime/:n
 GET /v1/math/prime-gap/:n
 GET /v1/math/prime-pi/:n
 GET /v1/math/pi/:n
+GET /v1/math/factor/:n
+GET /v1/math/totient/:n
+GET /v1/math/mobius/:n
 ```
 
 These public, read-only endpoints support values up to `1,000,000`. The
 `/v1/math/pi/:n` route is a compatibility alias for `/v1/math/prime-pi/:n`.
 Prime-counting uses a bounded sieve so requests above the limit return
 `400 Bad Request` rather than allocating unbounded memory. Prime searches and
-prime gaps use the same upper bound.
+prime gaps and factorisation use the same upper bound. Factorisation uses trial
+division for this demonstration; it is not a general factoring service.
 
 Examples:
 
@@ -327,6 +340,9 @@ curl -sS 'https://abhrankan.duckdns.org/api/v1/math/is-prime/97'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/next-prime/100'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/prime-gap/1000'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000'
+curl -sS 'https://abhrankan.duckdns.org/api/v1/math/factor/360'
+curl -sS 'https://abhrankan.duckdns.org/api/v1/math/totient/36'
+curl -sS 'https://abhrankan.duckdns.org/api/v1/math/mobius/30'
 ```
 
 ```json
@@ -347,6 +363,81 @@ curl -sS 'https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000'
   "gap": 12
 }
 ```
+
+### Factorisation
+
+`/v1/math/factor/:n` returns the prime factorisation of a value in
+`0 ≤ n ≤ 1,000,000` as distinct prime factors and their exponents, ordered by
+ascending prime. Values below `2` return an empty `factors` array; `1` has no
+prime factors.
+
+```bash
+curl -sS 'https://abhrankan.duckdns.org/api/v1/math/factor/360'
+```
+
+```json
+{
+  "n": 360,
+  "factors": [
+    {
+      "prime": 2,
+      "power": 3
+    },
+    {
+      "prime": 3,
+      "power": 2
+    },
+    {
+      "prime": 5,
+      "power": 1
+    }
+  ]
+}
+```
+
+For example, factoring `1` is successful and returns an empty factor list:
+
+```http
+GET /v1/math/factor/1
+```
+
+```json
+{
+  "n": 1,
+  "factors": []
+}
+```
+
+### Totient and Möbius functions
+
+The totient endpoint returns the count of positive integers up to `n` that
+are coprime to `n`. The Möbius endpoint returns `0` when a squared prime
+factor divides `n`, otherwise `-1` or `1` according to the parity of the
+number of distinct prime factors. Both use bounded trial division through
+`1,000,000`.
+
+```http
+GET /v1/math/totient/:n
+GET /v1/math/mobius/:n
+```
+
+Examples:
+
+```json
+{
+  "n": 36,
+  "value": "12"
+}
+```
+
+```json
+{
+  "n": 30,
+  "value": -1
+}
+```
+
+For `n = 0`, totient and Möbius both return `0`; `φ(1) = 1` and `μ(1) = 1`.
 
 ## Application information endpoint
 
@@ -371,7 +462,7 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
 {
   "service": "lab-api",
   "api_version": "v1",
-  "app_version": "0.8.0",
+  "app_version": "0.9.0",
   "endpoints": [
     "GET /health",
     "GET /v1/info",
@@ -383,6 +474,9 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
     "GET /v1/math/prime-pi/:n",
     "GET /v1/math/pi/:n",
     "GET /v1/math/prime-gap/:n",
+    "GET /v1/math/factor/:n",
+    "GET /v1/math/totient/:n",
+    "GET /v1/math/mobius/:n",
     "GET /v1/catalan/:n",
     "GET /v1/snapshot",
     "GET /school/",
