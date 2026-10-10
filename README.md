@@ -110,6 +110,7 @@ GET /api/v1/math/totient/:n
 GET /api/v1/math/mobius/:n
 GET /api/v1/math/divisor-count/:n
 GET /api/v1/math/divisor-sum/:n
+GET /api/v1/math/divisors/:n
 ```
 
 The original route remains available as a deprecated compatibility alias for
@@ -159,6 +160,7 @@ GET /api/v1/math/totient/:n
 GET /api/v1/math/mobius/:n
 GET /api/v1/math/divisor-count/:n
 GET /api/v1/math/divisor-sum/:n
+GET /api/v1/math/divisors/:n
 ```
 
 Prime searches and prime gaps support `0 ≤ n ≤ 1,000,000`. The prime-counting
@@ -205,6 +207,7 @@ curl https://abhrankan.duckdns.org/api/v1/math/totient/36
 curl https://abhrankan.duckdns.org/api/v1/math/mobius/30
 curl https://abhrankan.duckdns.org/api/v1/math/divisor-count/360
 curl https://abhrankan.duckdns.org/api/v1/math/divisor-sum/360
+curl https://abhrankan.duckdns.org/api/v1/math/divisors/12
 ```
 
 ```json
@@ -433,6 +436,7 @@ Contains:
 - Catalan, Fibonacci, and GCD calculation
 - Prime-number and prime-counting route wiring
 - Prime factorisation route wiring
+- Multiplicative arithmetic route wiring for totient, Möbius, and divisor functions
 - Backward-compatible Catalan route
 - Mounts the School API router from `src/school/`
 - `lab-api import` command dispatch for the School database importer
@@ -455,6 +459,9 @@ Contains bounded trial-division utilities used by the public number-theory API:
 - Prime factorisation
 - Euler's totient function φ(n)
 - Möbius function μ(n)
+- Divisor-count function τ(n)
+- Divisor-sum function σ(n)
+- Sorted positive-divisor enumeration
 
 ### `src/school/`
 
@@ -987,6 +994,7 @@ curl -u 'username' https://abhrankan.duckdns.org/api/v1/snapshot
 | `/api/v1/math/mobius/:n` | GET | None | Möbius function |
 | `/api/v1/math/divisor-count/:n` | GET | None | Divisor-count function τ(n) |
 | `/api/v1/math/divisor-sum/:n` | GET | None | Divisor-sum function σ(n) |
+| `/api/v1/math/divisors/:n` | GET | None | Sorted positive divisors of `n` |
 | `/api/v1/catalan/:n` | GET | None | Deprecated Catalan compatibility alias |
 | `/api/v1/snapshot` | GET | Nginx Basic Auth | Host/system snapshot |
 | `/school/` | GET | None | Public School portal UI |

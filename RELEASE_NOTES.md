@@ -1,3 +1,20 @@
+## lab-api v0.9.2
+
+Release date: 2026-10-10
+
+### Added
+
+- Added sorted positive divisors with `GET /v1/math/divisors/:n`.
+- Added route and arithmetic tests verifying divisor enumeration against
+  divisor-count and divisor-sum.
+
+### Safety
+
+- The endpoint is capped at `n ≤ 1,000,000` and returns an empty array for
+  `n = 0`.
+
+---
+
 ## lab-api v0.9.1
 
 Release date: 2026-10-10
@@ -16,7 +33,7 @@ Release date: 2026-10-10
 ### Validation
 
 - `cargo fmt` passes.
-- `cargo test` passes with 77 tests.
+- `cargo test` passes with 78 tests.
 
 ---
 

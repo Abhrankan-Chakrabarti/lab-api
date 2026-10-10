@@ -8,7 +8,7 @@ use tower_http::services::ServeDir;
 mod factor;
 mod prime;
 
-use factor::{divisor_count, divisor_sum, factorise, mobius, totient, MAX_FACTOR_N};
+use factor::{divisor_count, divisor_sum, divisors, factorise, mobius, totient, MAX_FACTOR_N};
 use prime::{
     is_prime, next_prime, previous_prime, prime_gap, prime_pi, MAX_PRIME_PI_N, MAX_PRIME_SCAN_N,
 };
@@ -93,6 +93,12 @@ struct MobiusResult {
 }
 
 #[derive(Serialize)]
+struct DivisorsResponse {
+    n: u64,
+    divisors: Vec<u64>,
+}
+
+#[derive(Serialize)]
 struct ErrorBody {
     error: String,
 }
@@ -130,6 +136,7 @@ async fn info() -> Json<Info> {
             "GET /v1/math/mobius/:n",
             "GET /v1/math/divisor-count/:n",
             "GET /v1/math/divisor-sum/:n",
+            "GET /v1/math/divisors/:n",
             "GET /v1/catalan/:n",
             "GET /v1/snapshot",
             "GET /school/",
@@ -458,6 +465,22 @@ async fn divisor_sum_handler(Path(n): Path<u64>) -> impl IntoResponse {
     .into_response()
 }
 
+async fn divisors_handler(Path(n): Path<u64>) -> impl IntoResponse {
+    if n > MAX_FACTOR_N {
+        return err(
+            StatusCode::BAD_REQUEST,
+            format!("n must be <= {MAX_FACTOR_N} for this demo"),
+        )
+        .into_response();
+    }
+
+    Json(DivisorsResponse {
+        n,
+        divisors: divisors(n),
+    })
+    .into_response()
+}
+
 /// Build the existing public API router.
 fn api_router() -> Router {
     Router::new()
@@ -479,6 +502,7 @@ fn api_router() -> Router {
         .route("/v1/math/mobius/:n", get(mobius_handler))
         .route("/v1/math/divisor-count/:n", get(divisor_count_handler))
         .route("/v1/math/divisor-sum/:n", get(divisor_sum_handler))
+        .route("/v1/math/divisors/:n", get(divisors_handler))
         // Backward-compatible alias.
         .route("/v1/catalan/:n", get(catalan_handler))
 }
@@ -777,6 +801,9 @@ mod tests {
         assert!(endpoints
             .iter()
             .any(|route| route == "GET /v1/math/divisor-sum/:n"));
+        assert!(endpoints
+            .iter()
+            .any(|route| route == "GET /v1/math/divisors/:n"));
 
         assert!(endpoints.iter().any(|route| route == "GET /school/"));
     }
@@ -949,12 +976,28 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["n"], 360);
         assert_eq!(body["value"], "1170");
+
+        let (status, body) = json_response(
+            Request::get("/v1/math/divisors/12")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["n"], 12);
+        assert_eq!(body["divisors"], serde_json::json!([1, 2, 3, 4, 6, 12]));
     }
 
     #[tokio::test]
     async fn multiplicative_routes_reject_over_limit() {
         let over = MAX_FACTOR_N + 1;
-        for route in ["totient", "mobius", "divisor-count", "divisor-sum"] {
+        for route in [
+            "totient",
+            "mobius",
+            "divisor-count",
+            "divisor-sum",
+            "divisors",
+        ] {
             let (status, body) = json_response(
                 Request::get(format!("/v1/math/{route}/{over}"))
                     .body(Body::empty())

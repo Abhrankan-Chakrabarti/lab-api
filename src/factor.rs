@@ -111,6 +111,26 @@ pub fn divisor_sum(n: u64) -> u64 {
     })
 }
 
+pub fn divisors(n: u64) -> Vec<u64> {
+    if n == 0 {
+        return Vec::new();
+    }
+
+    let mut values = vec![1];
+    for factor in factorise(n) {
+        let current = values.clone();
+        let mut power = 1;
+
+        for _ in 0..factor.power {
+            power *= factor.prime;
+            values.extend(current.iter().map(|value| value * power));
+        }
+    }
+
+    values.sort_unstable();
+    values
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,5 +201,14 @@ mod tests {
         assert_eq!(divisor_sum(1), 1);
         assert_eq!(divisor_sum(36), 91);
         assert_eq!(divisor_sum(360), 1170);
+    }
+
+    #[test]
+    fn divisors_cases() {
+        assert_eq!(divisors(0), Vec::<u64>::new());
+        assert_eq!(divisors(1), vec![1]);
+        assert_eq!(divisors(12), vec![1, 2, 3, 4, 6, 12]);
+        assert_eq!(divisors(360).len() as u64, divisor_count(360));
+        assert_eq!(divisors(360).iter().sum::<u64>(), divisor_sum(360));
     }
 }
