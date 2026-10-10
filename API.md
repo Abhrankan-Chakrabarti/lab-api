@@ -46,6 +46,8 @@ https://abhrankan.duckdns.org/api/v1/math/pi/1000
 https://abhrankan.duckdns.org/api/v1/math/factor/360
 https://abhrankan.duckdns.org/api/v1/math/totient/36
 https://abhrankan.duckdns.org/api/v1/math/mobius/30
+https://abhrankan.duckdns.org/api/v1/math/divisor-count/360
+https://abhrankan.duckdns.org/api/v1/math/divisor-sum/360
 https://abhrankan.duckdns.org/api/v1/snapshot
 https://abhrankan.duckdns.org/school/
 https://abhrankan.duckdns.org/school/api/health
@@ -74,6 +76,8 @@ http://127.0.0.1:8088/v1/math/pi/1000
 http://127.0.0.1:8088/v1/math/factor/360
 http://127.0.0.1:8088/v1/math/totient/36
 http://127.0.0.1:8088/v1/math/mobius/30
+http://127.0.0.1:8088/v1/math/divisor-count/360
+http://127.0.0.1:8088/v1/math/divisor-sum/360
 http://127.0.0.1:8088/v1/snapshot
 http://127.0.0.1:8088/school/
 http://127.0.0.1:8088/school/api/health
@@ -105,6 +109,8 @@ The routes in this table are **backend** paths. Public clients prefix core route
 | GET | `/v1/math/factor/:n` | None | Prime factorisation of `n`, `0 ≤ n ≤ 1,000,000` |
 | GET | `/v1/math/totient/:n` | None | Euler's totient φ(n), `0 ≤ n ≤ 1,000,000` |
 | GET | `/v1/math/mobius/:n` | None | Möbius function μ(n), `0 ≤ n ≤ 1,000,000` |
+| GET | `/v1/math/divisor-count/:n` | None | Divisor-count function τ(n), `0 ≤ n ≤ 1,000,000` |
+| GET | `/v1/math/divisor-sum/:n` | None | Divisor-sum function σ(n), `0 ≤ n ≤ 1,000,000` |
 | GET | `/v1/catalan/:n` | None | Deprecated Catalan compatibility alias; use `/v1/math/catalan/:n`, `0 ≤ n ≤ 34` |
 | GET | `/v1/snapshot` | Nginx Basic Auth | Host/system snapshot |
 | GET | `/school/` | None | Public School portal UI and static assets |
@@ -329,6 +335,8 @@ GET /v1/math/pi/:n
 GET /v1/math/factor/:n
 GET /v1/math/totient/:n
 GET /v1/math/mobius/:n
+GET /v1/math/divisor-count/:n
+GET /v1/math/divisor-sum/:n
 ```
 
 These public, read-only endpoints support values up to `1,000,000`. The
@@ -349,6 +357,8 @@ curl -sS 'https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/factor/360'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/totient/36'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/mobius/30'
+curl -sS 'https://abhrankan.duckdns.org/api/v1/math/divisor-count/360'
+curl -sS 'https://abhrankan.duckdns.org/api/v1/math/divisor-sum/360'
 ```
 
 ```json
@@ -448,6 +458,21 @@ Examples:
 
 For `n = 0`, totient and Möbius both return `0`; `φ(1) = 1` and `μ(1) = 1`.
 
+The divisor-count and divisor-sum endpoints use the same factorisation:
+
+```http
+GET /v1/math/divisor-count/:n
+GET /v1/math/divisor-sum/:n
+```
+
+For `n = 360`, `τ(360) = 24` and `σ(360) = 1170`.
+For `n = 0`, both endpoints return `0`; `τ(1) = 1` and `σ(1) = 1`.
+
+```json
+{ "n": 360, "value": "24" }
+{ "n": 360, "value": "1170" }
+```
+
 ## Application information endpoint
 
 ### Route
@@ -471,7 +496,7 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
 {
   "service": "lab-api",
   "api_version": "v1",
-  "app_version": "0.9.0",
+  "app_version": "0.9.1",
   "endpoints": [
     "GET /health",
     "GET /v1/info",
@@ -487,6 +512,8 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
     "GET /v1/math/factor/:n",
     "GET /v1/math/totient/:n",
     "GET /v1/math/mobius/:n",
+    "GET /v1/math/divisor-count/:n",
+    "GET /v1/math/divisor-sum/:n",
     "GET /v1/catalan/:n",
     "GET /v1/snapshot",
     "GET /school/",
@@ -669,6 +696,8 @@ This is intentional. The endpoint exposes host-level information and is therefor
 - `GET /v1/math/is-prime/:n` — unauthenticated
 - `GET /v1/math/next-prime/:n` — unauthenticated
 - `GET /v1/math/previous-prime/:n` — unauthenticated
+- `GET /v1/math/divisor-count/:n` — unauthenticated
+- `GET /v1/math/divisor-sum/:n` — unauthenticated
 - `GET /v1/math/prime-gap/:n` — unauthenticated
 - `GET /v1/math/prime-pi/:n` — unauthenticated
 - `GET /v1/math/pi/:n` — unauthenticated

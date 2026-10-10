@@ -82,6 +82,35 @@ pub fn mobius(n: u64) -> i8 {
     }
 }
 
+pub fn divisor_count(n: u64) -> u64 {
+    if n == 0 {
+        return 0;
+    }
+
+    factorise(n)
+        .into_iter()
+        .map(|factor| u64::from(factor.power) + 1)
+        .product()
+}
+
+pub fn divisor_sum(n: u64) -> u64 {
+    if n == 0 {
+        return 0;
+    }
+
+    factorise(n).into_iter().fold(1u64, |sum, factor| {
+        let mut term = 1u64;
+        let mut power = 1u64;
+
+        for _ in 0..factor.power {
+            power = power.saturating_mul(factor.prime);
+            term = term.saturating_add(power);
+        }
+
+        sum.saturating_mul(term)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +165,21 @@ mod tests {
         assert_eq!(mobius(30), -1);
         assert_eq!(mobius(36), 0);
         assert_eq!(mobius(210), 1);
+    }
+
+    #[test]
+    fn divisor_count_cases() {
+        assert_eq!(divisor_count(0), 0);
+        assert_eq!(divisor_count(1), 1);
+        assert_eq!(divisor_count(36), 9);
+        assert_eq!(divisor_count(360), 24);
+    }
+
+    #[test]
+    fn divisor_sum_cases() {
+        assert_eq!(divisor_sum(0), 0);
+        assert_eq!(divisor_sum(1), 1);
+        assert_eq!(divisor_sum(36), 91);
+        assert_eq!(divisor_sum(360), 1170);
     }
 }

@@ -1,3 +1,25 @@
+## lab-api v0.9.1
+
+Release date: 2026-10-10
+
+### Added
+
+- Added divisor-count function τ(n) with `GET /v1/math/divisor-count/:n`.
+- Added divisor-sum function σ(n) with `GET /v1/math/divisor-sum/:n`.
+- Reused the bounded factorisation core and expanded route, unit, and API tests.
+
+### Safety
+
+- Both endpoints are capped at `n ≤ 1,000,000`.
+- Results use the existing string-valued mathematical response format.
+
+### Validation
+
+- `cargo fmt` passes.
+- `cargo test` passes with 77 tests.
+
+---
+
 ## lab-api v0.9.0
 
 Release date: 2026-10-09

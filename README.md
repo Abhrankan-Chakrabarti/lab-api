@@ -15,7 +15,7 @@ The application is designed to run as a **localhost-only systemd service**, with
 - 🔑 HTTP Basic Authentication for sensitive system information
 - 📊 Linux system snapshot endpoint
 - ℹ️ Public application information endpoint
-- 🔢 Catalan, Fibonacci, GCD, prime-number, factorisation, totient, and Möbius computation
+- 🔢 Catalan, Fibonacci, GCD, prime-number, factorisation, totient, Möbius, and divisor computation
 - 🏫 Read-only School database API with privacy-filtered student details
 - 🛡️ Allowlisted admin access to full School student records
 - 📥 Validated one-shot School database importer
@@ -62,7 +62,7 @@ Nginx provides the public HTTPS interface and forwards requests to the local app
 
 For the canonical API contract, see [`API.md`](API.md).
 
-For the `v0.9.0` release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
+For the latest release changes, see [`RELEASE_NOTES.md`](RELEASE_NOTES.md).
 
 This README focuses on the public core `/api/*` surface. The separate School module is summarized below; see [`API.md`](API.md) and [`RELEASE_NOTES.md`](RELEASE_NOTES.md) for its routes, privacy boundary, admin authorization, and importer history.
 
@@ -108,6 +108,8 @@ GET /api/v1/math/pi/:n
 GET /api/v1/math/factor/:n
 GET /api/v1/math/totient/:n
 GET /api/v1/math/mobius/:n
+GET /api/v1/math/divisor-count/:n
+GET /api/v1/math/divisor-sum/:n
 ```
 
 The original route remains available as a deprecated compatibility alias for
@@ -155,6 +157,8 @@ GET /api/v1/math/pi/:n
 GET /api/v1/math/factor/:n
 GET /api/v1/math/totient/:n
 GET /api/v1/math/mobius/:n
+GET /api/v1/math/divisor-count/:n
+GET /api/v1/math/divisor-sum/:n
 ```
 
 Prime searches and prime gaps support `0 ≤ n ≤ 1,000,000`. The prime-counting
@@ -199,6 +203,8 @@ curl https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000
 curl https://abhrankan.duckdns.org/api/v1/math/factor/360
 curl https://abhrankan.duckdns.org/api/v1/math/totient/36
 curl https://abhrankan.duckdns.org/api/v1/math/mobius/30
+curl https://abhrankan.duckdns.org/api/v1/math/divisor-count/360
+curl https://abhrankan.duckdns.org/api/v1/math/divisor-sum/360
 ```
 
 ```json
@@ -976,6 +982,11 @@ curl -u 'username' https://abhrankan.duckdns.org/api/v1/snapshot
 | `/api/v1/math/prime-gap/:n` | GET | None | Surrounding prime gap |
 | `/api/v1/math/prime-pi/:n` | GET | None | Prime-counting function π(n) |
 | `/api/v1/math/pi/:n` | GET | None | Prime-counting alias |
+| `/api/v1/math/factor/:n` | GET | None | Prime factorisation |
+| `/api/v1/math/totient/:n` | GET | None | Euler's totient function |
+| `/api/v1/math/mobius/:n` | GET | None | Möbius function |
+| `/api/v1/math/divisor-count/:n` | GET | None | Divisor-count function τ(n) |
+| `/api/v1/math/divisor-sum/:n` | GET | None | Divisor-sum function σ(n) |
 | `/api/v1/catalan/:n` | GET | None | Deprecated Catalan compatibility alias |
 | `/api/v1/snapshot` | GET | Nginx Basic Auth | Host/system snapshot |
 | `/school/` | GET | None | Public School portal UI |
