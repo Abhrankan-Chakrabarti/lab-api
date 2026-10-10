@@ -5,6 +5,7 @@ Release date: 2026-10-09
 ### Added
 
 - Added bounded prime factorisation with `GET /v1/math/factor/:n`.
+- Added previous-prime lookup with `GET /v1/math/previous-prime/:n`.
 - Added Euler's totient function with `GET /v1/math/totient/:n`.
 - Added the Möbius function with `GET /v1/math/mobius/:n`.
 - Added shared factorisation utilities and tests for edge cases, multiplicative

@@ -39,6 +39,7 @@ https://abhrankan.duckdns.org/api/v1/math/fibonacci/10
 https://abhrankan.duckdns.org/api/v1/math/gcd/84/30
 https://abhrankan.duckdns.org/api/v1/math/is-prime/97
 https://abhrankan.duckdns.org/api/v1/math/next-prime/100
+https://abhrankan.duckdns.org/api/v1/math/previous-prime/100
 https://abhrankan.duckdns.org/api/v1/math/prime-gap/1000
 https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000
 https://abhrankan.duckdns.org/api/v1/math/pi/1000
@@ -66,6 +67,7 @@ http://127.0.0.1:8088/v1/math/fibonacci/10
 http://127.0.0.1:8088/v1/math/gcd/84/30
 http://127.0.0.1:8088/v1/math/is-prime/97
 http://127.0.0.1:8088/v1/math/next-prime/100
+http://127.0.0.1:8088/v1/math/previous-prime/100
 http://127.0.0.1:8088/v1/math/prime-gap/1000
 http://127.0.0.1:8088/v1/math/prime-pi/1000
 http://127.0.0.1:8088/v1/math/pi/1000
@@ -96,6 +98,7 @@ The routes in this table are **backend** paths. Public clients prefix core route
 | GET | `/v1/math/gcd/:a/:b` | None | Greatest common divisor of two `u64` values |
 | GET | `/v1/math/is-prime/:n` | None | Primality test, `0 ≤ n ≤ 1,000,000` |
 | GET | `/v1/math/next-prime/:n` | None | Next prime greater than `n`, `0 ≤ n ≤ 1,000,000` |
+| GET | `/v1/math/previous-prime/:n` | None | Previous prime less than `n`, `2 < n ≤ 1,000,000` |
 | GET | `/v1/math/prime-gap/:n` | None | Surrounding prime gap, `2 < n ≤ 1,000,000` |
 | GET | `/v1/math/prime-pi/:n` | None | Prime-counting function π(n), `0 ≤ n ≤ 1,000,000` |
 | GET | `/v1/math/pi/:n` | None | Prime-counting function π(n), compatibility alias |
@@ -252,6 +255,7 @@ The most important contract checks are:
 - `GET /v1/math/gcd/:a/:b` succeeds with `200` for valid `u64` path values
 - `GET /v1/math/is-prime/:n` succeeds with `200` when `0 ≤ n ≤ 1,000,000`
 - `GET /v1/math/next-prime/:n` succeeds with `200` when `0 ≤ n ≤ 1,000,000`
+- `GET /v1/math/previous-prime/:n` succeeds with `200` when `2 < n ≤ 1,000,000`
 - `GET /v1/math/prime-gap/:n` succeeds with `200` when `2 < n ≤ 1,000,000`
 - `GET /v1/math/prime-pi/:n` and `/v1/math/pi/:n` succeed with `200` when `0 ≤ n ≤ 1,000,000`
 - `GET /v1/catalan/:n` remains available as a deprecated compatibility alias; new clients should use `/v1/math/catalan/:n`
@@ -318,6 +322,7 @@ curl -sS 'https://abhrankan.duckdns.org/api/v1/math/fibonacci/10'
 ```http
 GET /v1/math/is-prime/:n
 GET /v1/math/next-prime/:n
+GET /v1/math/previous-prime/:n
 GET /v1/math/prime-gap/:n
 GET /v1/math/prime-pi/:n
 GET /v1/math/pi/:n
@@ -338,6 +343,7 @@ Examples:
 ```bash
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/is-prime/97'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/next-prime/100'
+curl -sS 'https://abhrankan.duckdns.org/api/v1/math/previous-prime/100'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/prime-gap/1000'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000'
 curl -sS 'https://abhrankan.duckdns.org/api/v1/math/factor/360'
@@ -353,6 +359,9 @@ curl -sS 'https://abhrankan.duckdns.org/api/v1/math/mobius/30'
 ```
 
 `next-prime` and prime-counting return `{ "n": ..., "value": "..." }`.
+`previous-prime` returns the greatest prime strictly less than `n` using the
+same `{ "n": ..., "value": "..." }` response shape. It returns `400 Bad
+Request` for `n ≤ 2`.
 `prime-gap` returns the previous prime, next prime, and gap:
 
 ```json
@@ -471,6 +480,7 @@ curl -sS 'http://127.0.0.1:8088/v1/info'
     "GET /v1/math/gcd/:a/:b",
     "GET /v1/math/is-prime/:n",
     "GET /v1/math/next-prime/:n",
+    "GET /v1/math/previous-prime/:n",
     "GET /v1/math/prime-pi/:n",
     "GET /v1/math/pi/:n",
     "GET /v1/math/prime-gap/:n",
@@ -658,6 +668,7 @@ This is intentional. The endpoint exposes host-level information and is therefor
 - `GET /v1/math/gcd/:a/:b` — unauthenticated
 - `GET /v1/math/is-prime/:n` — unauthenticated
 - `GET /v1/math/next-prime/:n` — unauthenticated
+- `GET /v1/math/previous-prime/:n` — unauthenticated
 - `GET /v1/math/prime-gap/:n` — unauthenticated
 - `GET /v1/math/prime-pi/:n` — unauthenticated
 - `GET /v1/math/pi/:n` — unauthenticated

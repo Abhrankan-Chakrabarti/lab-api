@@ -101,6 +101,7 @@ GET /api/v1/math/fibonacci/:n
 GET /api/v1/math/gcd/:a/:b
 GET /api/v1/math/is-prime/:n
 GET /api/v1/math/next-prime/:n
+GET /api/v1/math/previous-prime/:n
 GET /api/v1/math/prime-gap/:n
 GET /api/v1/math/prime-pi/:n
 GET /api/v1/math/pi/:n
@@ -147,6 +148,7 @@ Prime-number routes are public and read-only:
 ```http
 GET /api/v1/math/is-prime/:n
 GET /api/v1/math/next-prime/:n
+GET /api/v1/math/previous-prime/:n
 GET /api/v1/math/prime-gap/:n
 GET /api/v1/math/prime-pi/:n
 GET /api/v1/math/pi/:n
@@ -191,6 +193,7 @@ Examples:
 ```bash
 curl https://abhrankan.duckdns.org/api/v1/math/is-prime/97
 curl https://abhrankan.duckdns.org/api/v1/math/next-prime/100
+curl https://abhrankan.duckdns.org/api/v1/math/previous-prime/100
 curl https://abhrankan.duckdns.org/api/v1/math/prime-gap/1000
 curl https://abhrankan.duckdns.org/api/v1/math/prime-pi/1000
 curl https://abhrankan.duckdns.org/api/v1/math/factor/360
@@ -969,6 +972,7 @@ curl -u 'username' https://abhrankan.duckdns.org/api/v1/snapshot
 | `/api/v1/math/gcd/:a/:b` | GET | None | Greatest common divisor |
 | `/api/v1/math/is-prime/:n` | GET | None | Primality test |
 | `/api/v1/math/next-prime/:n` | GET | None | Next prime |
+| `/api/v1/math/previous-prime/:n` | GET | None | Previous prime |
 | `/api/v1/math/prime-gap/:n` | GET | None | Surrounding prime gap |
 | `/api/v1/math/prime-pi/:n` | GET | None | Prime-counting function π(n) |
 | `/api/v1/math/pi/:n` | GET | None | Prime-counting alias |
